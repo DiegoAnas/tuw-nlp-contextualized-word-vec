@@ -37,10 +37,10 @@ class Decoder(nn.Module):
     
     def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int , dict_size:int, padding=constants.PAD, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.num_layers
-        self.bidirectional
+        self.num_layers = num_layers
+        self.bidirectional = bidirectional
         self.dropout = nn.Dropout(dropout)
-        self.rnn_size
+        self.rnn_size = rnn_size
         self.hidden_size = rnn_size
         self.embedding = nn.Embedding(num_embeddings=dict_size, # TODO what other size?
                                 embedding_dim=rnn_size,
