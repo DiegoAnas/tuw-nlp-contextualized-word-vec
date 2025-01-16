@@ -7,7 +7,7 @@ from NMT.modules import GlobalAttention
 
 class Encoder(nn.Module):
     
-    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int, emb_layer=None, dict_size=0, *args, **kwargs):
+    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int, dict_size:int,emb_layer=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.num_layers = num_layers
         self.bidirectional = bidirectional
@@ -35,19 +35,23 @@ class Encoder(nn.Module):
     
 class Decoder(nn.Module):
     
-    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int , dict_size:int, *args, **kwargs):
+    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int , dict_size:int, padding=constants.PAD, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.num_layers
         self.bidirectional
         self.dropout = nn.Dropout(dropout)
         self.rnn_size
         self.hidden_size = rnn_size
-        self.embedding = nn.Embedding(num_embeddings=dict_size,
+        self.embedding = nn.Embedding(num_embeddings=dict_size, # TODO what other size?
                                 embedding_dim=rnn_size,
-                                padding_idx=constants.PAD) #TODO adapt padding constant
+                                padding_idx=padding) #TODO adapt padding constant
         self.LSTM = nn.LSTM(input_size=rnn_size, hidden_size=rnn_size, 
                             num_layers=num_layers, dropout=dropout,bidirectional=bidirectional)
         self.attn = GlobalAttention(rnn_size)
+        
+        ##TODO should this be separate? vvvvvv
+        self.linear = nn.Linear(in_features=rnn_size, out_features=dict_size)
+        self.softmax = nn.Softmax()#?
         
         
     def forward(self, input, hidden, context, init_output):
@@ -59,10 +63,10 @@ class Decoder(nn.Module):
             output = self.dropout(output)
             emb_t = emb_t.squeeze(0)
             output, hidden = self.rnn(emb_t, hidden)
-            output, attn = self.attn(output, context.t())
+            output, attn = self.attn(output, context.t()) #(4)
             output = self.dropout(output)
             outputs += [output]
-
+        
         outputs = torch.stack(outputs)
         return outputs, hidden, attn
     
@@ -99,4 +103,5 @@ class NMTModel(nn.Module):
 
         out, dec_hidden, _attn = self.decoder(tgt, enc_hidden, context, init_output)
 
+        
         return out

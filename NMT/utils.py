@@ -55,9 +55,8 @@ def timeSince(since, percent):
 
 #Training and evaluating methods
 
-def train_epoch(dataloader, encoder, decoder, encoder_optimizer,
-
-          decoder_optimizer, criterion):
+def train_epoch(dataloader, encoder, decoder, encoder_optimizer, 
+                decoder_optimizer, criterion):
 
     total_loss = 0
     for data in dataloader:
@@ -113,27 +112,16 @@ def train(train_dataloader, encoder, decoder, n_epochs, learning_rate=0.001,
     #TODO plot?
     #showPlot(plot_losses)
     
-def evaluate(encoder, decoder, sentence, input_lang, output_lang):
+def translate(encoder, decoder, sentence, input_tokenizer, target_tokenizer):
     #TODO add target tokenizer
     #TODO modify for TensorFromSentence
     with torch.no_grad():
-        input_tensor = tensorFromSentence(input_lang, sentence)
+        input_tensor = input_tokenizer(sentence)
 
         encoder_outputs, encoder_hidden = encoder(input_tensor)
         decoder_outputs, decoder_hidden, decoder_attn = decoder(encoder_outputs, encoder_hidden)
 
-        #TODO decoder output to words
-        #ways? generator, dense + softmax + target_tokenizer.decode()
-        _, topi = decoder_outputs.topk(1)
-        decoded_ids = topi.squeeze()
-
-        decoded_words = []
-        for idx in decoded_ids:
-            if idx.item() == EOS_token:
-                #TODO needs to be added, check tokenizer special tokens (101-102)
-                #decoded_words.append('<EOS>')
-                break
-            decoded_words.append(output_lang.index2word[idx.item()])
+        decoded_words = target_tokenizer.decode(decoder_outputs)
     return decoded_words, decoder_attn
 
 def run_evaluation(encoder:nn.Module, decoder:nn.Module, pairs:Tuple[str,str], input_lang, output_lang,  tokenizers=None, print_sentences=False):
@@ -148,7 +136,7 @@ def run_evaluation(encoder:nn.Module, decoder:nn.Module, pairs:Tuple[str,str], i
     references = []
     references_tokenized = []
     for pair in pairs:
-        output_words, _ = evaluate(encoder, decoder, pair[0], input_lang, output_lang)
+        output_words, _ = translate(encoder, decoder, pair[0], input_lang, output_lang)
         references.append(pair[1])
         references_tokenized.append(pair[1].split(" "))
         output_sentence = ' '.join(output_words)
