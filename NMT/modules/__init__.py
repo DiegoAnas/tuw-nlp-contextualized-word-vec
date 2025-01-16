@@ -1,1 +1,1 @@
-from NMT.modules.GlobalAttention import GlobalAttention
+from NMT.modules.global_attention import GlobalAttention

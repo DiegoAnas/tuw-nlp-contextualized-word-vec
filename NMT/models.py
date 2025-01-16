@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 
-from modules import GlobalAttention
-import Constants
+from NMT import constants
+from NMT.modules import GlobalAttention 
 
 class Encoder(nn.Module):
     
@@ -16,7 +17,7 @@ class Encoder(nn.Module):
         if emb_layer is None:
             self.embedding = nn.Embedding(num_embeddings=dict_size,
                                     embedding_dim=rnn_size,
-                                    padding_idx=Constants.PAD) #TODO adapt padding constant
+                                    padding_idx=constants.PAD) #TODO adapt padding constant
         else:
             self.embedding = emb_layer
         self.LSTM = nn.LSTM(input_size=rnn_size, hidden_size=rnn_size, num_layers=num_layers, 
@@ -43,7 +44,7 @@ class Decoder(nn.Module):
         self.hidden_size = rnn_size
         self.embedding = nn.Embedding(num_embeddings=dict_size,
                                 embedding_dim=rnn_size,
-                                padding_idx=Constants.PAD) #TODO adapt padding constant
+                                padding_idx=constants.PAD) #TODO adapt padding constant
         self.LSTM = nn.LSTM(input_size=rnn_size, hidden_size=rnn_size, 
                             num_layers=num_layers, dropout=dropout,bidirectional=bidirectional)
         self.attn = GlobalAttention(rnn_size)
