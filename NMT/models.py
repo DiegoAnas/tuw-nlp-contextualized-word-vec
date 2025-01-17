@@ -45,6 +45,7 @@ class Decoder(nn.Module):
         self.embedding = nn.Embedding(num_embeddings=dict_size, # TODO what other size?
                                 embedding_dim=rnn_size,
                                 padding_idx=padding) #TODO adapt padding constant
+        
         self.LSTM = nn.LSTM(input_size=rnn_size, hidden_size=rnn_size, 
                             num_layers=num_layers, dropout=dropout,bidirectional=bidirectional)
         self.attn = GlobalAttention(rnn_size)
@@ -61,7 +62,9 @@ class Decoder(nn.Module):
         for emb_t in emb.split(1):
             emb_t = self.dropout(emb_t)
             output = self.dropout(output)
-            emb_t = emb_t.squeeze(0)
+            #emb_t = emb_t.squeeze(0)
+            #TODO FIX
+            # ValueError: LSTM: Expected input to be 2D or 3D, got 1D instead
             output, hidden = self.LSTM(emb_t, hidden)
             output, attn = self.attn(output, context.t()) #(4)
             output = self.dropout(output)
