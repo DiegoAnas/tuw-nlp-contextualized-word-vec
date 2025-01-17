@@ -55,47 +55,36 @@ def timeSince(since, percent):
 
 #Training and evaluating methods
 
-def train_epoch(dataloader, encoder, decoder, encoder_optimizer, 
-                decoder_optimizer, criterion):
-
+def train_epoch(dataloader, modelNMT, model_optimizer, criterion):
     total_loss = 0
     for data in dataloader:
-        #TODO do entire model not enc-dec separation?¿
         input_tensor, target_tensor = data
 
-        encoder_optimizer.zero_grad()
-        decoder_optimizer.zero_grad()
-
-        encoder_outputs, encoder_hidden = encoder(input_tensor)
-        decoder_outputs, _, _ = decoder(encoder_outputs, encoder_hidden, target_tensor)
-
-        loss = criterion(
-            decoder_outputs.view(-1, decoder_outputs.size(-1)),
-            target_tensor.view(-1)
-        )
+        model_optimizer.zero_grad()
+        
+        output = modelNMT(input_tensor)
+        
+        loss = criterion(output, target_tensor)
         loss.backward()
 
-        encoder_optimizer.step()
-        decoder_optimizer.step()
-
+        model_optimizer.step()
+        
         total_loss += loss.item()
 
     return total_loss / len(dataloader)
 
-def train(train_dataloader, encoder, decoder, n_epochs, learning_rate=0.001,
+def train(train_dataloader, modelNMT, n_epochs, learning_rate=0.001,
                print_every=100, plot_every=100):
-    #TODO change optimizer to model, instead of separate ?¿
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
     plot_loss_total = 0  # Reset every plot_every
 
-    encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
+    model_optimizer = optim.Adam(modelNMT.parameters(), lr=learning_rate)
     criterion = nn.NLLLoss()
 
     for epoch in range(1, n_epochs + 1):
-        loss = train_epoch(train_dataloader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
+        loss = train_epoch(train_dataloader, modelNMT, model_optimizer, criterion)
         print_loss_total += loss
         plot_loss_total += loss
 
@@ -112,19 +101,16 @@ def train(train_dataloader, encoder, decoder, n_epochs, learning_rate=0.001,
     #TODO plot?
     #showPlot(plot_losses)
     
-def translate(encoder, decoder, sentence, input_tokenizer, target_tokenizer):
-    #TODO add target tokenizer
-    #TODO modify for TensorFromSentence
+def translate(nmtModel, sentence, input_tokenizer, target_tokenizer):
     with torch.no_grad():
         input_tensor = input_tokenizer(sentence)
 
-        encoder_outputs, encoder_hidden = encoder(input_tensor)
-        decoder_outputs, decoder_hidden, decoder_attn = decoder(encoder_outputs, encoder_hidden)
+        output_tensor = nmtModel(input_tensor)
 
-        decoded_words = target_tokenizer.decode(decoder_outputs)
-    return decoded_words, decoder_attn
+        decoded_words = target_tokenizer.decode(output_tensor)
+    return decoded_words
 
-def run_evaluation(encoder:nn.Module, decoder:nn.Module, pairs:Tuple[str,str], input_lang, output_lang,  tokenizers=None, print_sentences=False):
+def run_evaluation(nmtModel:nn.Module, val_dataloader, input_lang, output_lang, input_tokenizer, tgt_tokenizer, print_sentences=False):
     #TODO incorporate input/target tokenizers
     #(encoder:nn.Module, decoder:nn.Module, pairs:Tuple[str,str], input_lang:Lang, output_lang:Lang, tokenizers=None, print_sentences=False):
     #TODO huggingface has gleu and bleu, remove hfeval ¿and nltk.translate?
@@ -135,8 +121,8 @@ def run_evaluation(encoder:nn.Module, decoder:nn.Module, pairs:Tuple[str,str], i
     predictions_tokenized = []
     references = []
     references_tokenized = []
-    for pair in pairs:
-        output_words, _ = translate(encoder, decoder, pair[0], input_lang, output_lang)
+    for pair in val_dataloader:
+        output_words = translate(nmtModel, pair[0], input_tokenizer, tgt_tokenizer)
         references.append(pair[1])
         references_tokenized.append(pair[1].split(" "))
         output_sentence = ' '.join(output_words)
