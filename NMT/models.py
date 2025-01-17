@@ -17,7 +17,7 @@ class Encoder(nn.Module):
         if emb_layer is None:
             self.embedding = nn.Embedding(num_embeddings=dict_size,
                                     embedding_dim=rnn_size,
-                                    padding_idx=constants.PAD) #TODO adapt padding constant
+                                    padding_idx=constants.PAD)
         else:
             self.embedding = emb_layer
         self.LSTM = nn.LSTM(input_size=rnn_size, hidden_size=rnn_size, num_layers=num_layers, 
@@ -85,7 +85,7 @@ class NMTModel(nn.Module):
     def _fix_enc_hidden(self, h):
         #  the encoder hidden is  (layers*directions) x batch x dim
         #  we need to convert it to layers x batch x (directions*dim)
-        if self.encoder.num_directions == 2:
+        if self.encoder.bidirectional:
             return h.view(h.size(0) // 2, 2, h.size(1), h.size(2)) \
                     .transpose(1, 2).contiguous() \
                     .view(h.size(0) // 2, h.size(1), h.size(2) * 2)
@@ -98,8 +98,8 @@ class NMTModel(nn.Module):
         enc_hidden, context = self.encoder(src)
         init_output = self.make_init_decoder_output(context)
 
-        enc_hidden = (self._fix_enc_hidden(enc_hidden[0]),
-                      self._fix_enc_hidden(enc_hidden[1]))
+        #enc_hidden = (self._fix_enc_hidden(enc_hidden[0]),
+        #              self._fix_enc_hidden(enc_hidden[1]))
 
         out, dec_hidden, _attn = self.decoder(tgt, enc_hidden, context, init_output)
 
