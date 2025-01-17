@@ -63,7 +63,7 @@ class Decoder(nn.Module):
             emb_t = self.dropout(emb_t)
             output = self.dropout(output)
             #emb_t = emb_t.squeeze(0)
-            #TODO FIX
+            #TODO FIX remove squeeze
             # ValueError: LSTM: Expected input to be 2D or 3D, got 1D instead
             output, hidden = self.LSTM(emb_t, hidden)
             output, attn = self.attn(output, context.t()) #(4)
@@ -101,9 +101,11 @@ class NMTModel(nn.Module):
         enc_hidden, context = self.encoder(src)
         init_output = self.make_init_decoder_output(context)
 
-        #enc_hidden = (self._fix_enc_hidden(enc_hidden[0]),
-        #              self._fix_enc_hidden(enc_hidden[1]))
-
+        enc_hidden = (self._fix_enc_hidden(enc_hidden[0]),
+                      self._fix_enc_hidden(enc_hidden[1]))
+        #TODO without squeeze
+        #RuntimeError: Expected hidden[0] size (1, 1, 50), got [2, 1, 50]
+        #Fix return fix_hidden
         out, dec_hidden, _attn = self.decoder(tgt, enc_hidden, context, init_output)
 
         
