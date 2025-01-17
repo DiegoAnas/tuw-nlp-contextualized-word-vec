@@ -62,7 +62,7 @@ class Decoder(nn.Module):
             emb_t = self.dropout(emb_t)
             output = self.dropout(output)
             emb_t = emb_t.squeeze(0)
-            output, hidden = self.rnn(emb_t, hidden)
+            output, hidden = self.LSTM(emb_t, hidden)
             output, attn = self.attn(output, context.t()) #(4)
             output = self.dropout(output)
             outputs += [output]
