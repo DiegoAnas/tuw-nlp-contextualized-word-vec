@@ -46,6 +46,7 @@ class Encoder(nn.Module):
         emb = self.dropout_l(emb)
         outputs, hidden_t = self.LSTM(emb, hidden)
         #TODO create and inser new dropout layer
+        #TODO check if output not 
         return hidden_t, outputs
     
     
@@ -57,14 +58,13 @@ class Decoder(nn.Module):
         super().__init__(*args, **kwargs)
         self.num_layers = num_layers
         self.bidirectional = bidirectional
-        self.dropout_r = dropout
-        self.dropout_l = nn.Dropout(p=dropout)
         self.input_size = word_vec_dim
         self.hidden_size = rnn_size
         self.embedding = nn.Embedding(num_embeddings = dict_size, # TODO what other size?
                                 embedding_dim = self.input_size,
                                 padding_idx = padding)
-        
+        self.dropout_r = dropout
+        self.dropout_l = nn.Dropout(p=dropout)
         self.LSTM = nn.LSTM(input_size = self.input_size,
                             hidden_size = self.hidden_size, 
                             num_layers = self.num_layers, 
@@ -77,19 +77,22 @@ class Decoder(nn.Module):
         self.softmax = nn.Softmax()#?
         
         
-    def forward(self, input, hidden, context, init_output):
+    def forward(self, input, hidden, context):
         emb = self.embedding(input)
         outputs = []
-        output = init_output
-        for emb_t in emb.split(1):
-            emb_t = self.dropout_l(emb_t)
-            output = self.dropout_l(output)
+        for emb_t in emb.split(1): #iterate over batch
+            emb_t = self.dropout_l(emb_t) # 1 x sentence_length x dimension
+            
+            #if self.input_feed:
+            #    emb_t = torch.cat([emb_t, output], 1)
+            
             #TODO 1
             # ValueError: LSTM: Expected input to be 2D or 3D, got 1D instead
             # FIX remove squeeze 
             #emb_t = emb_t.squeeze(0)
             output, hidden = self.LSTM(emb_t, hidden)
             #TODO create and inser new dropout layer
+            #TODO context is 3D tensor batch x sentence x dimension,  can't .t() transpose
             output, attn = self.attn(output, context.t()) #(4)
             outputs += [output]
         
@@ -103,19 +106,22 @@ class NMTModel(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
         
-    def make_init_decoder_output(self, context):
-        batch_size = context.size(1)
-        h_size = (batch_size, self.decoder.hidden_size)
-        return Variable(context.data.new(*h_size).zero_(), requires_grad=False)
+    def make_init_decoder_output(self, context) -> torch.Tensor:
+        """Initialize an all zeros initial tensor
+        Args:
+            context (torch.Tensor): with shape [batch_size, sentence length,word_vec_dim]
+        Returns:
+            torch.Tensor: _description_
+        """
+        batch_size = context.size(1) #TODO Wrong this is sentence length
+        return torch.zeros(batch_size, self.decoder.hidden_size)
 
     def _fix_enc_hidden(self, h):
         #  the encoder hidden is  (layers*directions) x batch x dim
         #  we need to convert it to layers x batch x (directions*dim)
         if self.encoder.bidirectional:
-            #TODO 3
-            # fix_hidden doesn't have the right dimensions
-            # IndexError: Dimension out of range (expected to be in range of [-2, 1], but got 2)
-            return h.view(h.size(0) // 2, 2, h.size(1), h.size(2)).transpose(1, 2).contiguous().view(h.size(0) // 2, h.size(1), h.size(2) * 2)
+            return (h[0].view(h[0].shape[0]//2, h[0].shape[1], h[0].shape[2]*2),
+                    h[1].view(h[1].shape[0]//2, h[1].shape[1], h[1].shape[2]*2))
         else:
             return h
         
@@ -123,15 +129,13 @@ class NMTModel(nn.Module):
         src = input[0]
         tgt = input[1][:-1]  # exclude last target from inputs
         enc_hidden, context = self.encoder(src)
-        init_output = self.make_init_decoder_output(context)
         
-        #TODO 2 without squeeze
-        #RuntimeError: Expected hidden[0] size (1, 1, 50), got [2, 1, 50]
-        #Fix return fix_hidden
-        enc_hidden = (self._fix_enc_hidden(enc_hidden[0]),
-                      self._fix_enc_hidden(enc_hidden[1]))
+        # if input_feed
+        #init_output = self.make_init_decoder_output(context)
         
-        out, dec_hidden, _attn = self.decoder(tgt, enc_hidden, context, init_output)
+        enc_hidden = self._fix_enc_hidden(enc_hidden)
+        
+        out, dec_hidden, _attn = self.decoder(tgt, enc_hidden, context)
 
         
         return out
