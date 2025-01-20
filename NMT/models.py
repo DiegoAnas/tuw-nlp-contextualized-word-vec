@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import logging
 
 from NMT import constants
 from NMT.modules import GlobalAttention 
@@ -48,7 +49,7 @@ class Encoder(nn.Module):
         outputs, hidden_t = self.LSTM(emb, hidden)
         #TODO check if output with batch is the right size
         outputs = self.dropout_l2(outputs)
-        return hidden_t, outputs
+        return outputs, hidden_t
     
 ##################
 # Decoder
@@ -130,6 +131,8 @@ class NMTModel(nn.Module):
         #  the encoder hidden is  (layers*directions) x batch x dim
         #  we need to convert it to layers x batch x (directions*dim)
         if self.encoder.bidirectional:
+            assert len(h) == 2 , f"enc_hidden tuple dimension unexpected"
+            assert len(h[0].shape) == 3, f"enc_hidden dimension unexpected"
             return (h[0].view(h[0].shape[0]//2, h[0].shape[1], h[0].shape[2]*2),
                     h[1].view(h[1].shape[0]//2, h[1].shape[1], h[1].shape[2]*2))
         else:
@@ -137,8 +140,8 @@ class NMTModel(nn.Module):
         
     def forward(self, input):
         src = input[0]
-        tgt = input[1][:-1]  # exclude last target from inputs
-        enc_hidden, context = self.encoder(src)
+        tgt = input[1]  # ¿exclude last target from inputs?
+        context, enc_hidden = self.encoder(src)
         
         # if input_feed
         #init_output = self.make_init_decoder_output(context)
