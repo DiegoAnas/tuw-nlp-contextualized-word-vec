@@ -28,8 +28,9 @@ class GlobalAttention(nn.Module):
     def __init__(self, dim, dot=False):
         super(GlobalAttention, self).__init__()
         self.linear_in = nn.Linear(dim, dim, bias=False)
-        self.sm = nn.Softmax()
+        self.sm = nn.Softmax(dim=1)  #TODO check if is the right dimension
         self.linear_out = nn.Linear(dim*2, dim, bias=False)
+        #TODO from dim to dim // 2
         self.tanh = nn.Tanh()
         self.mask = None
         self.dot = dot
@@ -39,28 +40,26 @@ class GlobalAttention(nn.Module):
 
     def forward(self, input, context):
         """
-        input: 1 x sentence_len x dim
-        context: batch x sourceL x dim 
+        input: h_dec_t = lstm_output [1 x sentence_len x dim]
+        context: encoder output vector [batch x sentence_len x dim] 
         """
-        if not self.dot:
-            targetT = self.linear_in(input).unsqueeze(2)  # batch x dim x 1
-        else:
-            targetT = input.unsqueeze(2)
-
-
+        #eqn 3
+        target_t = self.linear_in(input) # batch(1) x sentenceL x rnn_size 
         # Get attention
         
+        #attention = torch.matmul(encoder_out_tuple[1].squeeze(0),target_T.squeeze(0).t())
         
-        attn = torch.bmm(context, targetT).squeeze(2)  # batch x sourceL
-        if self.mask is not None:
-            attn.data.masked_fill_(self.mask, -float('inf'))
-        attn = self.sm(attn)  # alpha_t
-        attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x sourceL
-
-        weightedContext = torch.bmm(attn3, context).squeeze(1)  # batch x dim
+        attention = torch.matmul(context[1].squeeze(0),target_t.squeeze(0).t())
+        #attn = torch.bmm(context, target_t).squeeze(2)  # sen_len x sen_len
+        attn = self.sm(attention)  # alpha_t
         
-        contextCombined = torch.cat((weightedContext, input), 1)
+        # Eqn 4
+        # weightedContext # [sen_len x sen_len] x [sen_len x dim] [sen_len x dim]
+        # or #H transpose * alpha t
+        alpha_t_H = torch.matmul(attn, target_t.squeeze(0)) 
+          
+        context_combined = torch.cat((alpha_t_H, input.squeeze(0)), dim=1)      
 
-        contextOutput = self.tanh(self.linear_out(contextCombined))
+        contextOutput = self.tanh(self.linear_out(context_combined))
 
         return contextOutput, attn

@@ -10,6 +10,7 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 from datasets import load_dataset # type: ignore
 from transformers import AutoTokenizer  # type: ignore
 
+#####################
 #Data loading methods
 
 def encode_trans(examples, input_tokenizer, target_tokenizer, sentence_length):
@@ -53,6 +54,7 @@ def timeSince(since, percent):
     rs = es - s
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
+###############################
 #Training and evaluating methods
 
 def train_epoch(dataloader, modelNMT, model_optimizer, criterion):
@@ -65,6 +67,7 @@ def train_epoch(dataloader, modelNMT, model_optimizer, criterion):
         output = modelNMT(input_tensor)
         
         loss = criterion(output, target_tensor)
+        #TODO test tensor shapes
         loss.backward()
 
         model_optimizer.step()
@@ -111,8 +114,6 @@ def translate(nmtModel, sentence, input_tokenizer, target_tokenizer):
     return decoded_words
 
 def run_evaluation(nmtModel:nn.Module, val_dataloader, input_lang, output_lang, input_tokenizer, tgt_tokenizer, print_sentences=False):
-    #TODO incorporate input/target tokenizers
-    #(encoder:nn.Module, decoder:nn.Module, pairs:Tuple[str,str], input_lang:Lang, output_lang:Lang, tokenizers=None, print_sentences=False):
     #TODO huggingface has gleu and bleu, remove hfeval ¿and nltk.translate?
     #import hfeval
     #from nltk.translate import gleu_score

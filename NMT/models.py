@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+import torch.nn.functional as F
 
 from NMT import constants
 from NMT.modules import GlobalAttention 
+
 
 class Encoder(nn.Module):
     #  Dropout with ratio 0.2 was applied to the inputs and outputs of 
@@ -15,6 +16,7 @@ class Encoder(nn.Module):
         self.bidirectional = bidirectional
         self.dropout_r = dropout
         self.dropout_l = nn.Dropout(p=dropout)
+        self.dropout_l2 = nn.Dropout(p=dropout)
         assert (bidirectional and (rnn_size % 2 == 0)) or (not bidirectional)
         if bidirectional:
             self.hidden_size = rnn_size // 2
@@ -28,15 +30,14 @@ class Encoder(nn.Module):
         else:
             self.embedding = emb_layer
             #TODO if emb_layer is passed make sure passed data uses GLOVE indexes
-            #TODO check v
-            #This embedding layer should have _freeze = True 
-            # when passed or when declared? or when optimizers is defined?
+            #This embedding layer should have _freeze = True when declared
         self.LSTM = nn.LSTM(input_size= self.word_vec_dim, 
                             hidden_size= self.hidden_size, 
                             num_layers= self.num_layers, 
                             dropout= self.dropout_r, 
                             bidirectional= self.bidirectional)
-        #TODO create and insert new dropout layer
+        #TODO test LSTM batched to get a 32x hidden states
+        self.dropout_l2 = nn.Dropout(p=dropout)
         
     def forward(self, input, hidden=None):
         if self.embedding is None:
@@ -45,10 +46,12 @@ class Encoder(nn.Module):
             emb = self.embedding(input)
         emb = self.dropout_l(emb)
         outputs, hidden_t = self.LSTM(emb, hidden)
-        #TODO create and inser new dropout layer
-        #TODO check if output not 
+        #TODO check if output with batch is the right size
+        outputs = self.dropout_l2(outputs)
         return hidden_t, outputs
     
+##################
+# Decoder
     
 class Decoder(nn.Module):
     #  Dropout with ratio 0.2 was applied to the inputs and outputs of 
@@ -64,39 +67,46 @@ class Decoder(nn.Module):
                                 embedding_dim = self.input_size,
                                 padding_idx = padding)
         self.dropout_r = dropout
-        self.dropout_l = nn.Dropout(p=dropout)
+        self.dropout_l1 = nn.Dropout(p=dropout)
         self.LSTM = nn.LSTM(input_size = self.input_size,
                             hidden_size = self.hidden_size, 
                             num_layers = self.num_layers, 
                             dropout = self.dropout_r,
                             bidirectional = self.bidirectional)
+        self.dropout_l2 = nn.Dropout(p=dropout)
+        #TODO test LSTM batched to get a 32x hidden states to use on attention module
+        # and that way can use torch.bmm matrix multiplication (instead of matmul)
         self.attn = GlobalAttention(rnn_size)
-        
-        ##TODO should this be separate? vvvvvv
         self.linear = nn.Linear(in_features=rnn_size, out_features=dict_size)
-        self.softmax = nn.Softmax()#?
         
         
     def forward(self, input, hidden, context):
+        """_summary_
+
+        Args:
+            input (_type_): target tensor [batch x sentence_len x dim]
+            hidden (_type_): final hidden state of the encoder [layers x sentence_len x (directions*dim)][2]
+            context (_type_): output of the encoder 
+
+        Returns:
+            _type_: _description_
+        """
         emb = self.embedding(input)
-        outputs = []
+        context_adj_states = []
         for emb_t in emb.split(1): #iterate over batch
-            emb_t = self.dropout_l(emb_t) # 1 x sentence_length x dimension
-            
+            emb_t = self.dropout_l1(emb_t) # 1 x sentence_length x dimension
             #if self.input_feed:
             #    emb_t = torch.cat([emb_t, output], 1)
-            
-            #TODO 1
-            # ValueError: LSTM: Expected input to be 2D or 3D, got 1D instead
-            # FIX remove squeeze 
-            #emb_t = emb_t.squeeze(0)
-            output, hidden = self.LSTM(emb_t, hidden)
-            #TODO create and inser new dropout layer
-            #TODO context is 3D tensor batch x sentence x dimension,  can't .t() transpose
-            output, attn = self.attn(output, context.t()) #(4)
-            outputs += [output]
+            #h_dec_t, cell_t
+            h_dec_t, hidden = self.LSTM(emb_t, hidden)
+            h_dec_t = self.dropout_l2(h_dec_t)
+            #hidden num_layers*proj_size or *hidden_size
+            context_adj_ht, attn = self.attn(h_dec_t, context.t()) #(4)
+            context_adj_states += [context_adj_ht]
         
-        outputs = torch.stack(outputs)
+        #TODO test
+        h_context_stack = torch.stack(context_adj_states)
+        outputs = F.log_softmax(self.linear(h_context_stack))
         return outputs, hidden, attn
     
 class NMTModel(nn.Module):
