@@ -36,7 +36,8 @@ class Encoder(nn.Module):
                             hidden_size= self.hidden_size, 
                             num_layers= self.num_layers, 
                             dropout= self.dropout_r, 
-                            bidirectional= self.bidirectional)
+                            bidirectional= self.bidirectional,
+                            batch_first=True)
         #TODO test LSTM batched to get a 32x hidden states
         self.dropout_l2 = nn.Dropout(p=dropout)
         
@@ -46,6 +47,7 @@ class Encoder(nn.Module):
         else:
             emb = self.embedding(input)
         emb = self.dropout_l(emb)
+        
         outputs, hidden_t = self.LSTM(emb, hidden)
         #TODO check if output with batch is the right size
         outputs = self.dropout_l2(outputs)
@@ -73,7 +75,8 @@ class Decoder(nn.Module):
                             hidden_size = self.hidden_size, 
                             num_layers = self.num_layers, 
                             dropout = self.dropout_r,
-                            bidirectional = self.bidirectional)
+                            bidirectional = self.bidirectional,
+                            batch_first=True)
         self.dropout_l2 = nn.Dropout(p=dropout)
         #TODO test LSTM batched to get a 32x hidden states to use on attention module
         # and that way can use torch.bmm matrix multiplication (instead of matmul)
