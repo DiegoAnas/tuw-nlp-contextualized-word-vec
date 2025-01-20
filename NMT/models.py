@@ -1,4 +1,6 @@
+from typing import Tuple
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
@@ -38,7 +40,6 @@ class Encoder(nn.Module):
                             dropout= self.dropout_r, 
                             bidirectional= self.bidirectional,
                             batch_first=True)
-        #TODO test LSTM batched to get a 32x hidden states
         self.dropout_l2 = nn.Dropout(p=dropout)
         
     def forward(self, input, hidden=None):
@@ -71,6 +72,7 @@ class Decoder(nn.Module):
                                 padding_idx = padding)
         self.dropout_r = dropout
         self.dropout_l1 = nn.Dropout(p=dropout)
+        #self.decoder_lstm_input = embedding_size + hidden_size self.input_size + self.hidden_size
         self.LSTM = nn.LSTM(input_size = self.input_size,
                             hidden_size = self.hidden_size, 
                             num_layers = self.num_layers, 
@@ -78,47 +80,63 @@ class Decoder(nn.Module):
                             bidirectional = self.bidirectional,
                             batch_first=True)
         self.dropout_l2 = nn.Dropout(p=dropout)
-        #TODO test LSTM batched to get a 32x hidden states to use on attention module
-        # and that way can use torch.bmm matrix multiplication (instead of matmul)
-        self.attn = GlobalAttention(rnn_size)
-        self.linear = nn.Linear(in_features=rnn_size, out_features=dict_size)
+
+        self.linear_attn_in = nn.Linear(in_features=rnn_size, out_features=rnn_size)
+        self.linear_attn_out = nn.Linear(in_features=rnn_size*2, out_features=rnn_size)
         
         
-    def forward(self, input, hidden, context):
+    def forward(self, tgt_tensor:Tensor, encoder_out_vec:Tensor, encoder_hidden_out: Tuple[Tensor, Tensor], ):
         """_summary_
 
         Args:
-            input (_type_): target tensor [batch x sentence_len x dim]
-            hidden (_type_): final hidden state of the encoder [layers x sentence_len x (directions*dim)][2]
-            context (_type_): output of the encoder 
-
+            input (_type_): target tensor [batch x sentence_len]
+            encoder_out_vec (_type_): output of the encoder [batch x sentence len x rnn_size]
+            encoder_hidden_out (_type_): final hidden state of the encoder 2x[layers x batch x rnn_size]
         Returns:
             _type_: _description_
         """
-        emb = self.embedding(input)
+        h_dec_tmin1 = encoder_hidden_out
+        h_tilde_m1 = torch.zeros(encoder_out_vec.shape[0], self.hidden_size)
+        tgt_word_embeddings = self.embedding(tgt_tensor) # batch x sentence_len x word_vec_dim
         context_adj_states = []
-        for emb_t in emb.split(1): #iterate over batch
-            emb_t = self.dropout_l1(emb_t) # 1 x sentence_length x dimension
-            #if self.input_feed:
-            #    emb_t = torch.cat([emb_t, output], 1)
-            #h_dec_t, cell_t
-            h_dec_t, hidden = self.LSTM(emb_t, hidden)
+        for emb_z_t in tgt_word_embeddings.split(1):
+            emb_z_t = self.dropout_l1(emb_z_t)
+            #lstm_input = torch.cat(emb_z_t, h_tilde_m1)
+            h_dec_t, hidden_cell = self.LSTM(emb_z_t, h_dec_tmin1) #TODO first input of LSTM (embeddings) needs to be concatenated with the previous h_tilde
             h_dec_t = self.dropout_l2(h_dec_t)
-            #hidden num_layers*proj_size or *hidden_size
-            context_adj_ht, attn = self.attn(h_dec_t, context.t()) #(4)
-            context_adj_states += [context_adj_ht]
+            # h_dec_t.shape == batch x sentence_len x rnn_size
+            # hidden == [2][layers x batch x rnn_size]
+            
+            #equation 3
+            attention_l_in = self.linear_attn_in(h_dec_t)
+            #TODO attention_l_in = self.dropout_l3(attention_l_in)
+            alpha_t_mul = torch.bmm(attention_l_in, encoder_out_vec)
+            alpha_t = F.softmax(alpha_t_mul, dim=-1)
+            
+            #equation 4
+            att_view = (alpha_t_mul.size(0), 1, alpha_t_mul.size(1))
+            alpha_T_H = torch.bmm(alpha_t.view(*att_view), encoder_out_vec).squeeze(1)
+            context_combined = torch.cat([h_dec_t, alpha_T_H], 1)
+            context_adj_htilde = self.linear_attn_out(context_combined)
+            #TODO context_adj_htilde = self.dropout_l4(context_adj_htilde)
+            context_adj_htilde = torch.tanh(context_adj_htilde)
+            
+            h_tilde_m1 = context_adj_htilde
+            h_dec_tmin1 = h_dec_t, hidden_cell
+            context_adj_states.append(context_adj_htilde) #h_tildes
         
         #TODO test
         h_context_stack = torch.stack(context_adj_states)
-        outputs = F.log_softmax(self.linear(h_context_stack))
-        return outputs, hidden, attn
+        return h_context_stack
     
 class NMTModel(nn.Module):
     
-    def __init__(self, encoder, decoder, *args, **kwargs):
+    def __init__(self, encoder, decoder, rnn_size:int, tgt_dict_size:int, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.encoder = encoder
         self.decoder = decoder
+        self.linear = nn.Linear(in_features=rnn_size, out_features=tgt_dict_size)
+        #TODO add dropout module?
         
     def make_init_decoder_output(self, context) -> torch.Tensor:
         """Initialize an all zeros initial tensor
@@ -134,8 +152,8 @@ class NMTModel(nn.Module):
         #  the encoder hidden is  (layers*directions) x batch x dim
         #  we need to convert it to layers x batch x (directions*dim)
         if self.encoder.bidirectional:
-            assert len(h) == 2 , f"enc_hidden tuple dimension unexpected, got {len(h)}"
-            assert len(h[0].shape) == 3, f"enc_hidden dimension unexpected, got {h[0].shape}"
+            assert len(h) == 2 , f"enc_hidden tuple length 2 expected, got {len(h)}.\n{self.encoder}"
+            assert len(h[0].shape) == 3, f"expected 3D enc_hidden, got {h[0].shape}.\n{self.encoder}"
             return (h[0].view(h[0].shape[0]//2, h[0].shape[1], h[0].shape[2]*2),
                     h[1].view(h[1].shape[0]//2, h[1].shape[1], h[1].shape[2]*2))
         else:
@@ -144,14 +162,14 @@ class NMTModel(nn.Module):
     def forward(self, input):
         src = input[0]
         tgt = input[1]  # ¿exclude last target from inputs?
-        context, enc_hidden = self.encoder(src)
-        
-        # if input_feed
-        #init_output = self.make_init_decoder_output(context)
+        enc_out, enc_hidden = self.encoder(src)
         
         enc_hidden = self._fix_enc_hidden(enc_hidden)
-        
-        out, dec_hidden, _attn = self.decoder(tgt, enc_hidden, context)
+    
+        decoder_out = self.decoder(tgt,enc_out, enc_hidden)
 
+        out = self.linear(decoder_out)
+        #TODO add dropout op?
+        out = F.softmax(out, dim=-1)
         
         return out

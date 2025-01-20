@@ -27,7 +27,7 @@ import math
 class GlobalAttention(nn.Module):
     def __init__(self, dim, dot=False):
         super(GlobalAttention, self).__init__()
-        self.linear_in = nn.Linear(dim, dim, bias=False)
+        self.linear_in = nn.Linear(dim, dim, bias=False) # paper has bias!
         self.sm = nn.Softmax(dim=1)  #TODO check if is the right dimension
         self.linear_out = nn.Linear(dim*2, dim, bias=False)
         #TODO from dim to dim // 2
@@ -38,18 +38,17 @@ class GlobalAttention(nn.Module):
     def applyMask(self, mask):
         self.mask = mask
 
-    def forward(self, input, context):
+    def forward(self, h_dec_t, enc_h_out):
         """
-        input: h_dec_t = lstm_output [1 x sentence_len x dim]
-        context: encoder output vector [batch x sentence_len x dim] 
+        h_dec_t: h_dec_t = lstm_output [batch x sentence len x dim(rnn_size)]
+        enc_h_out: encoder output vector [batch x sentence_len x dim(rnn_size)]
         """
+        assert h_dec_t.shape == enc_h_out.shape, f"Expected equal shapes, got {h_dec_t.shape};{enc_h_out.shape}"
         #eqn 3
-        target_t = self.linear_in(input) # batch(1) x sentenceL x rnn_size 
+        target_t = self.linear_in(h_dec_t) # batch(1) x sentenceL x rnn_size 
         # Get attention
-        
-        #attention = torch.matmul(encoder_out_tuple[1].squeeze(0),target_T.squeeze(0).t())
-        
-        attention = torch.matmul(context[1].squeeze(0),target_t.squeeze(0).t())
+                
+        attention = torch.matmul(enc_h_out[1].squeeze(0),target_t.squeeze(0).t())
         #attn = torch.bmm(context, target_t).squeeze(2)  # sen_len x sen_len
         attn = self.sm(attention)  # alpha_t
         
@@ -58,7 +57,7 @@ class GlobalAttention(nn.Module):
         # or #H transpose * alpha t
         alpha_t_H = torch.matmul(attn, target_t.squeeze(0)) 
           
-        context_combined = torch.cat((alpha_t_H, input.squeeze(0)), dim=1)      
+        context_combined = torch.cat((alpha_t_H, h_dec_t.squeeze(0)), dim=1)      
 
         contextOutput = self.tanh(self.linear_out(context_combined))
 
