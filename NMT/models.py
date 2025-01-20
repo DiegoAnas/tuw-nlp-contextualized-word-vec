@@ -131,8 +131,8 @@ class NMTModel(nn.Module):
         #  the encoder hidden is  (layers*directions) x batch x dim
         #  we need to convert it to layers x batch x (directions*dim)
         if self.encoder.bidirectional:
-            assert len(h) == 2 , f"enc_hidden tuple dimension unexpected"
-            assert len(h[0].shape) == 3, f"enc_hidden dimension unexpected"
+            assert len(h) == 2 , f"enc_hidden tuple dimension unexpected, got {len(h)}"
+            assert len(h[0].shape) == 3, f"enc_hidden dimension unexpected, got {h[0].shape}"
             return (h[0].view(h[0].shape[0]//2, h[0].shape[1], h[0].shape[2]*2),
                     h[1].view(h[1].shape[0]//2, h[1].shape[1], h[1].shape[2]*2))
         else:
