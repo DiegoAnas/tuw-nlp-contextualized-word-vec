@@ -64,7 +64,7 @@ def train_epoch(dataloader, modelNMT, model_optimizer, criterion):
 
         model_optimizer.zero_grad()
         
-        output = modelNMT(input_tensor)
+        output = modelNMT(data)
         
         loss = criterion(output, target_tensor)
         #TODO test tensor shapes
