@@ -19,7 +19,6 @@ def encode_trans(examples:Dict, input_tokenizer, target_tokenizer, sentence_leng
   ens = []
   des = []
   for ex in examples:
-    # possible filter short sentences so no padding is needed
       ens.append(ex['en'])
       des.append(ex['de'])
   inputs = input_tokenizer(ens, padding='longest', truncation=True, max_length=sentence_length)
@@ -27,20 +26,27 @@ def encode_trans(examples:Dict, input_tokenizer, target_tokenizer, sentence_leng
   return {'input': inputs["input_ids"], "target": targets["input_ids"]}
 
 def collate_custom(batch) -> Tuple[torch.Tensor, torch.Tensor]:
-  inputs = batch[0]["input"]
-  targets = batch[0]["target"]
+  inputs, targets = [] ,[]
+  for batchi in batch:
+    inputs.append(batchi["input"])
+    targets.append(batchi["target"])
   return torch.tensor(inputs, dtype=torch.long), torch.tensor(targets, dtype=torch.long)
 
-def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int, sentence_length) -> DataLoader:
+def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int, sentence_length:int, streaming: bool=False, shard:int|None=None) -> DataLoader:
     """
-    Returns a streaming version of the wmt16 dataset.
+    Returns the wmt16 dataset.
     params:
     split: str indicates what split of the dataset to return
     > get_dataloader("train")
     """
-    dataset_stream = load_dataset("wmt16", "de-en", streaming=True, split=split, trust_remote_code=True)
-    dataset_batched = dataset_stream.batch(batch_size=batch_size)
-    dataset_m = dataset_batched.map(lambda x: encode_trans(x, input_tokenizer, target_tokenizer, sentence_length= sentence_length),remove_columns="translation")
+    #TODO stream is too slow?
+    if streaming:
+        dataset_origin = load_dataset("wmt16", "de-en", streaming=streaming, split=split, trust_remote_code=True)
+    else:
+        dataset_origin = load_dataset("wmt16", "de-en", split=split)
+        if shard is not None:
+            dataset_origin = dataset_origin.shard(shard,1)
+    dataset_m = dataset_origin.map(lambda x: encode_trans(x, input_tokenizer, target_tokenizer, sentence_length= sentence_length), remove_columns="translation", batched=True, batch_size=batch_size)
     return DataLoader(dataset_m, collate_fn=collate_custom)
 
 ######
@@ -61,19 +67,27 @@ def timeSince(since, percent):
 ###############################
 #Training and evaluating methods
 
-def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device):
+def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device, print_every:int|None=100):
     total_loss = 0
-    for data in dataloader:
-        data = data.to(device)
-        _, target_tensor = data
+    start = time.time()
+    dataset_size = len(dataloader)
+    for batch_num, data in enumerate(dataloader):
+        input_tensor, target_tensor = data
+        input_tensor = input_tensor.to(device)
+        target_tensor = target_tensor.to(device)
         model_optimizer.zero_grad()
-        output = modelNMT(data)
+        output = modelNMT(input_tensor, target_tensor)
         loss = criterion(output.view(-1, output.shape[-1]), target_tensor.view(-1))
         loss.backward()
 
         model_optimizer.step()
         
         total_loss += loss.item()
+        if print_every is not None:
+            if batch_num % print_every == 0:
+                print_loss_avg = total_loss / (batch_num+1)
+                print(f"Time {timeSince(start, (batch_num+1) / dataset_size)}, on batch {(batch_num+1)},\
+                progress: {(batch_num+1) / dataset_size * 100}%, accumulated loss: {total_loss}, avg loss{print_loss_avg}, last loss: {loss.item()}")
 
     return total_loss / len(dataloader)
 

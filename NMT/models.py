@@ -152,7 +152,7 @@ class NMTModel(nn.Module):
         else:
             return h
         
-    def forward(self, input):
+    def forward(self, input:Tuple):
         src = input[0]
         tgt = input[1]  # ¿exclude last target from inputs?
         enc_out, enc_hidden = self.encoder(src)
@@ -163,6 +163,6 @@ class NMTModel(nn.Module):
 
         out = self.linear(decoder_out)
         #TODO add dropout op?
-        out = F.softmax(out, dim=-1)
+        out = F.log_softmax(out, dim=-1)
         
         return out
