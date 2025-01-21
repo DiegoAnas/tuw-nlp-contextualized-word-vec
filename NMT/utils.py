@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Dict, Tuple
 import torch
 import time
 import math
@@ -14,7 +14,7 @@ from transformers import AutoTokenizer  # type: ignore
 #####################
 #Data loading methods
 
-def encode_trans(examples, input_tokenizer, target_tokenizer, sentence_length):
+def encode_trans(examples:Dict, input_tokenizer, target_tokenizer, sentence_length:int)-> Dict:
   examples = examples["translation"]
   ens = []
   des = []
@@ -26,12 +26,12 @@ def encode_trans(examples, input_tokenizer, target_tokenizer, sentence_length):
   targets = target_tokenizer(des, padding='longest', truncation=True, max_length=sentence_length)
   return {'input': inputs["input_ids"], "target": targets["input_ids"]}
 
-def collate_custom(batch):
+def collate_custom(batch) -> Tuple[torch.Tensor, torch.Tensor]:
   inputs = batch[0]["input"]
   targets = batch[0]["target"]
   return torch.tensor(inputs, dtype=torch.long), torch.tensor(targets, dtype=torch.long)
 
-def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int, sentence_length) -> DataLoader:
+def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int, sentence_length, device) -> DataLoader:
     """
     Returns a streaming version of the wmt16 dataset.
     params:
@@ -61,9 +61,10 @@ def timeSince(since, percent):
 ###############################
 #Training and evaluating methods
 
-def train_epoch(dataloader, modelNMT, model_optimizer, criterion):
+def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device):
     total_loss = 0
     for data in dataloader:
+        data = target_tensor.to(data)
         _, target_tensor = data
         model_optimizer.zero_grad()
         output = modelNMT(data)
@@ -76,8 +77,11 @@ def train_epoch(dataloader, modelNMT, model_optimizer, criterion):
 
     return total_loss / len(dataloader)
 
-def train(train_dataloader, modelNMT, n_epochs, learning_rate=0.001,
-               print_every=100, plot_every=100):
+def train(train_dataloader, modelNMT, n_epochs,
+                learning_rate=0.001,
+                print_every=100, plot_every=100,
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+    
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
@@ -89,7 +93,7 @@ def train(train_dataloader, modelNMT, n_epochs, learning_rate=0.001,
     # TODO look at NLLLoss ignore_index= param for adjusting the weight of token classes like <EOS> etc.
 
     for epoch in range(1, n_epochs + 1):
-        loss = train_epoch(train_dataloader, modelNMT, model_optimizer, criterion)
+        loss = train_epoch(train_dataloader, modelNMT, model_optimizer, criterion, device)
         print_loss_total += loss
         plot_loss_total += loss
 

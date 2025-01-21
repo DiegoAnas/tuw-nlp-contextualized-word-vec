@@ -61,6 +61,7 @@ class Decoder(nn.Module):
     
     def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int, word_vec_dim:int, dict_size:int, padding=constants.PAD, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # TODO ? self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.num_layers = num_layers
         self.bidirectional = bidirectional
         self.input_size = word_vec_dim
@@ -97,7 +98,7 @@ class Decoder(nn.Module):
         h_dec_tmin1 = encoder_hidden_out
         batch_size = tgt_tensor.shape[0]
         sen_len = tgt_tensor.shape[1]
-        h_tilde_m1 = torch.zeros(batch_size, self.hidden_size)
+        h_tilde_m1 = torch.zeros(batch_size, self.hidden_size) #TODO torch device?
         tgt_word_embeddings = self.embedding(tgt_tensor) # [batch, sentence_len, word_vec_dim]
         context_adj_states = []
         for emb_z_t in tgt_word_embeddings.split(1,dim=1): # iterate over words
@@ -140,16 +141,6 @@ class NMTModel(nn.Module):
         self.linear = nn.Linear(in_features=rnn_size, out_features=self.output_vocab_size)
         #TODO add dropout module
         
-    def make_init_decoder_output(self, context) -> torch.Tensor:
-        """Initialize an all zeros initial tensor
-        Args:
-            context (torch.Tensor): with shape [batch_size, sentence length,word_vec_dim]
-        Returns:
-            torch.Tensor: _description_
-        """
-        batch_size = context.size(1) #TODO remove this method
-        return torch.zeros(batch_size, self.decoder.hidden_size)
-
     def _fix_enc_hidden(self, h):
         #  the encoder hidden is  (layers*directions) x batch x dim
         #  we need to convert it to layers x batch x (directions*dim)
