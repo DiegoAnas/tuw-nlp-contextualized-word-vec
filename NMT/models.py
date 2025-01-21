@@ -88,7 +88,7 @@ class Decoder(nn.Module):
         """LSTM and global attention mechanism
 
         Args:
-            input (_type_): target tensor [batch x sentence_len]
+            tgt_tensor (_type_): target tensor [batch x sentence_len]
             encoder_out_vec_H (_type_): output of the encoder [batch x sentence len x rnn_size]
             encoder_hidden_out (_type_): final hidden state of the encoder 2x[layers x batch x rnn_size]
         Returns:
@@ -97,11 +97,12 @@ class Decoder(nn.Module):
         h_dec_tmin1 = encoder_hidden_out
         batch_size = tgt_tensor.shape[0]
         sen_len = tgt_tensor.shape[1]
-        h_tilde_m1 = torch.zeros(encoder_out_vec_H.shape[0], self.hidden_size)
+        h_tilde_m1 = torch.zeros(batch_size, self.hidden_size)
         tgt_word_embeddings = self.embedding(tgt_tensor) # [batch, sentence_len, word_vec_dim]
         context_adj_states = []
         for emb_z_t in tgt_word_embeddings.split(1,dim=1): # iterate over words
             emb_z_t = self.dropout_l1(emb_z_t) # emb_z_t [batch, 1, word_vec_dim]
+            #TODO input_lstm = torch.cat(emb_z_t, h_tilde_m1) #TODO change size of LSTM first
             h_dec_t, hidden_cell = self.LSTM(emb_z_t, h_dec_tmin1) 
             h_dec_t = self.dropout_l2(h_dec_t) # h_dec_t.shape == [1, sen_len, rnn_size]
             # hidden == [2][layers x batch x rnn_size]
@@ -124,7 +125,6 @@ class Decoder(nn.Module):
 
             h_tilde_m1 = context_adj_htilde
             h_dec_tmin1 = hidden_cell # paper says it should the output of the LSTM not the hidden states
-            print(context_adj_htilde.shape)
             context_adj_states.append(context_adj_htilde) #h_tildes
         
         h_context_stack = torch.stack(context_adj_states,dim=1)
@@ -134,10 +134,11 @@ class NMTModel(nn.Module):
     
     def __init__(self, encoder, decoder, rnn_size:int, tgt_dict_size:int, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.output_vocab_size = tgt_dict_size
         self.encoder = encoder
         self.decoder = decoder
-        self.linear = nn.Linear(in_features=rnn_size, out_features=tgt_dict_size)
-        #TODO add dropout module?
+        self.linear = nn.Linear(in_features=rnn_size, out_features=self.output_vocab_size)
+        #TODO add dropout module
         
     def make_init_decoder_output(self, context) -> torch.Tensor:
         """Initialize an all zeros initial tensor
@@ -146,7 +147,7 @@ class NMTModel(nn.Module):
         Returns:
             torch.Tensor: _description_
         """
-        batch_size = context.size(1) #TODO Wrong this is sentence length
+        batch_size = context.size(1) #TODO remove this method
         return torch.zeros(batch_size, self.decoder.hidden_size)
 
     def _fix_enc_hidden(self, h):

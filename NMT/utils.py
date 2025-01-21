@@ -4,6 +4,7 @@ import time
 import math
 import torch
 import torch.nn as nn
+import torch.functional as F
 from torch.autograd import Variable
 from torch import optim
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler
@@ -42,6 +43,9 @@ def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int,
     dataset_m = dataset_batched.map(lambda x: encode_trans(x, input_tokenizer, target_tokenizer, sentence_length= sentence_length),remove_columns="translation")
     return DataLoader(dataset_m, collate_fn=collate_custom)
 
+######
+# Logging methods
+
 def asMinutes(s):
     m = math.floor(s / 60)
     s -= m * 60
@@ -60,14 +64,10 @@ def timeSince(since, percent):
 def train_epoch(dataloader, modelNMT, model_optimizer, criterion):
     total_loss = 0
     for data in dataloader:
-        input_tensor, target_tensor = data
-
+        _, target_tensor = data
         model_optimizer.zero_grad()
-        
         output = modelNMT(data)
-        
-        loss = criterion(output, target_tensor)
-        #TODO test tensor shapes
+        loss = criterion(output.view(-1, output.shape[-1]), target_tensor.view(-1))
         loss.backward()
 
         model_optimizer.step()
@@ -84,7 +84,9 @@ def train(train_dataloader, modelNMT, n_epochs, learning_rate=0.001,
     plot_loss_total = 0  # Reset every plot_every
 
     model_optimizer = optim.Adam(modelNMT.parameters(), lr=learning_rate)
+    # TODO make optimizers a parameter for easier set up
     criterion = nn.NLLLoss()
+    # TODO look at NLLLoss ignore_index= param for adjusting the weight of token classes like <EOS> etc.
 
     for epoch in range(1, n_epochs + 1):
         loss = train_epoch(train_dataloader, modelNMT, model_optimizer, criterion)
