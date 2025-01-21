@@ -83,62 +83,51 @@ class Decoder(nn.Module):
         self.linear_attn_out = nn.Linear(in_features=rnn_size*2, out_features=rnn_size)
         
         
-    def forward(self, tgt_tensor:Tensor, encoder_out_vec:Tensor, encoder_hidden_out: Tuple[Tensor, Tensor], ):
-        """_summary_
+    
+    def forward(self, tgt_tensor:Tensor, encoder_out_vec_H:Tensor, encoder_hidden_out: Tuple[Tensor, Tensor], )-> Tensor:
+        """LSTM and global attention mechanism
 
         Args:
             input (_type_): target tensor [batch x sentence_len]
-            encoder_out_vec (_type_): output of the encoder [batch x sentence len x rnn_size]
+            encoder_out_vec_H (_type_): output of the encoder [batch x sentence len x rnn_size]
             encoder_hidden_out (_type_): final hidden state of the encoder 2x[layers x batch x rnn_size]
         Returns:
-            _type_: _description_
+            Tensor: [batch, sen_len, rnn_size]
         """
         h_dec_tmin1 = encoder_hidden_out
         batch_size = tgt_tensor.shape[0]
         sen_len = tgt_tensor.shape[1]
-        h_tilde_m1 = torch.zeros(encoder_out_vec.shape[0], self.hidden_size)
+        h_tilde_m1 = torch.zeros(encoder_out_vec_H.shape[0], self.hidden_size)
         tgt_word_embeddings = self.embedding(tgt_tensor) # [batch, sentence_len, word_vec_dim]
         context_adj_states = []
-        for emb_z_t in tgt_word_embeddings.split(1):
-            emb_z_t = self.dropout_l1(emb_z_t)
-            # emb_z_t is [1, sen_len, word_vec_dim]
-            
-            #lstm_input = torch.cat(emb_z_t, h_tilde_m1)
+        for emb_z_t in tgt_word_embeddings.split(1,dim=1): # iterate over words
+            emb_z_t = self.dropout_l1(emb_z_t) # emb_z_t [batch, 1, word_vec_dim]
             h_dec_t, hidden_cell = self.LSTM(emb_z_t, h_dec_tmin1) 
-            #TODO first input of LSTM (embeddings) needs to be concatenated with the previous h_tilde
-                    #TODO encoder_hidden_out wrong size, must iterate both embeddings and encoder?
-                    # RuntimeError: Expected hidden[0] size (2, 1, 100), got [2, 32, 100]
-            #output tensor shape [sen_len, batch, directions*hidden_size]
-            h_dec_t = self.dropout_l2(h_dec_t)
-            # h_dec_t.shape == batch x sentence_len x rnn_size
+            h_dec_t = self.dropout_l2(h_dec_t) # h_dec_t.shape == [1, sen_len, rnn_size]
             # hidden == [2][layers x batch x rnn_size]
             
-            #equation 3
+            # equation 3
             attention_l_in = self.linear_attn_in(h_dec_t)
-            #TODO attention_l_in = self.dropout_l3(attention_l_in)
-            alpha_t_mul = torch.bmm(attention_l_in.permute(1,0,2), encoder_out_vec.permute(1,2,0))
+            # [batch, 1, rnn] x [batch, sen_len, rnn]
+            alpha_t_mul = torch.bmm(attention_l_in, encoder_out_vec_H.permute(0,2,1))
             alpha_t = F.softmax(alpha_t_mul, dim=-1)
-            # alpha_t is [sen_len, 1, batch] 
-            
-            #equation 4
+            # alpha_t [sen_len, 1, batch]
+
+            # equation 4
             # Transpose H multiply by attention alpha_t
-            alpha_T_H = torch.bmm(alpha_t.unsqueeze(1), encoder_out_vec) .squeeze(1)
-            # alpha_t X H.t()  =  batch x 1 x rnn -> batch x rnn
-            
-            context_combined = torch.cat([h_dec_t, alpha_T_H], 1)
-            # h_t_dec = lstm() should be batch x rnn
-            # instead is is 1 x sen_len x rnn
-            # output should be batch x rnn*2
+            # alpha_t[batch, 1, sen_len] X H[batch, sen_len, rnn_size]  = batch x 1 x rnn
+            alpha_T_H = torch.bmm(alpha_t, encoder_out_vec_H)
+            context_combined = torch.cat([h_dec_t.squeeze(1), alpha_T_H.squeeze(1)], 1)
             context_adj_htilde = self.linear_attn_out(context_combined)
             #TODO context_adj_htilde = self.dropout_l4(context_adj_htilde)
             context_adj_htilde = torch.tanh(context_adj_htilde)
-            
+
             h_tilde_m1 = context_adj_htilde
-            h_dec_tmin1 = h_dec_t, hidden_cell
+            h_dec_tmin1 = hidden_cell # paper says it should the output of the LSTM not the hidden states
+            print(context_adj_htilde.shape)
             context_adj_states.append(context_adj_htilde) #h_tildes
         
-        #TODO test
-        h_context_stack = torch.stack(context_adj_states)
+        h_context_stack = torch.stack(context_adj_states,dim=1)
         return h_context_stack
     
 class NMTModel(nn.Module):
