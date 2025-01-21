@@ -31,7 +31,7 @@ def collate_custom(batch) -> Tuple[torch.Tensor, torch.Tensor]:
   targets = batch[0]["target"]
   return torch.tensor(inputs, dtype=torch.long), torch.tensor(targets, dtype=torch.long)
 
-def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int, sentence_length, device) -> DataLoader:
+def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int, sentence_length) -> DataLoader:
     """
     Returns a streaming version of the wmt16 dataset.
     params:
@@ -64,7 +64,7 @@ def timeSince(since, percent):
 def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device):
     total_loss = 0
     for data in dataloader:
-        data = target_tensor.to(data)
+        data = data.to(device)
         _, target_tensor = data
         model_optimizer.zero_grad()
         output = modelNMT(data)
