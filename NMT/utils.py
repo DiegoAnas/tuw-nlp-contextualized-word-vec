@@ -73,10 +73,10 @@ def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device, print_
     dataset_size = len(dataloader)
     for batch_num, data in enumerate(dataloader):
         input_tensor, target_tensor = data
-        #input_tensor = input_tensor.to(device)
-        #target_tensor = target_tensor.to(device)
+        input_tensor = input_tensor.to(device)
+        target_tensor = target_tensor.to(device)
         model_optimizer.zero_grad()
-        output = modelNMT(input_tensor, target_tensor)
+        output = modelNMT((input_tensor, target_tensor))
         loss = criterion(output.view(-1, output.shape[-1]), target_tensor.view(-1))
         loss.backward()
 
@@ -109,9 +109,9 @@ def evaluate(dataloader, model, criterion, device, print_every:int|None=100)-> f
     dataset_size = len(dataloader)
     for batch_num, data in enumerate(dataloader):
         input_tensor, target_tensor = data
-        #input_tensor = input_tensor.to(device)
-        #target_tensor = target_tensor.to(device)
-        output = model(input_tensor, target_tensor)
+        input_tensor = input_tensor.to(device)
+        target_tensor = target_tensor.to(device)
+        output = model((input_tensor, target_tensor))
         loss = criterion(output.view(-1, output.shape[-1]), target_tensor.view(-1))    
         total_loss += loss.item()
         #TODO count correct tokens (?)
@@ -135,7 +135,7 @@ def train(train_dataloader, modelNMT, n_epochs:int,
     plot_loss_total = 0  # Reset every plot_every
 
     model_optimizer = optim.Adam(modelNMT.parameters(), lr=learning_rate)
-    # TODO make optimizers a parameter for easier set up
+    # TODO add different optimizers as parameter for easier set up
     criterion = nn.NLLLoss()
     # TODO look at NLLLoss ignore_index= param for adjusting the weight of token classes like <EOS> etc.
 
