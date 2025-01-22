@@ -144,9 +144,10 @@ class NMTModel(nn.Module):
     def _fix_enc_hidden(self, h):
         #  the encoder hidden is  (layers*directions) x batch x dim
         #  we need to convert it to layers x batch x (directions*dim)
+        #TODO when not batched, this gives error
         if self.encoder.bidirectional:
             assert len(h) == 2 , f"enc_hidden tuple length 2 expected, got {len(h)}.\n{self.encoder}"
-            assert len(h[0].shape) == 3, f"expected 3D enc_hidden, got {h[0].shape}.\n{self.encoder}"
+            assert len(h[0].shape) == 3, f"expected [(layers*directions), batch, dim] enc_hidden, got {h[0].shape}.\n{self.encoder}"
             return (h[0].view(h[0].shape[0]//2, h[0].shape[1], h[0].shape[2]*2),
                     h[1].view(h[1].shape[0]//2, h[1].shape[1], h[1].shape[2]*2))
         else:

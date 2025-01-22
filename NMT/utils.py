@@ -10,6 +10,8 @@ from torch import optim
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 from datasets import load_dataset # type: ignore
 from transformers import AutoTokenizer  # type: ignore
+from tokenizers import decoders # type: ignore
+import evaluate as hfeval # type: ignore
 
 #####################
 #Data loading methods
@@ -47,7 +49,7 @@ def get_dataloader(split:str, input_tokenizer, target_tokenizer, batch_size:int,
         if shard is not None:
             dataset_origin = dataset_origin.shard(shard,1)
     dataset_m = dataset_origin.map(lambda x: encode_trans(x, input_tokenizer, target_tokenizer, sentence_length= sentence_length), remove_columns="translation", batched=True, batch_size=batch_size)
-    return DataLoader(dataset_m, collate_fn=collate_custom)
+    return DataLoader(dataset_m, collate_fn=collate_custom, batch_size=batch_size)
 
 ######
 # Logging methods
@@ -164,47 +166,34 @@ def train(train_dataloader, modelNMT, n_epochs:int,
     #TODO plot?
     #showPlot(plot_losses)
     
-def translate(nmtModel, sentence, input_tokenizer, target_tokenizer):
+def translate(nmtModel, input, target, target_tokenizer) -> str:
     with torch.no_grad():
-        input_tensor = input_tokenizer(sentence)
-
-        output_tensor = nmtModel(input_tensor)
-
-        decoded_words = target_tokenizer.decode(output_tensor)
+        output_tensor = nmtModel((input,target))
+        #[batch, sentence_length, dict_size]
+        output_sentence_ids = torch.topk(output_tensor,k=1)
+        # target_tokenizer.decoder = decoders.WordPiece()
+        decoded_words = target_tokenizer.decode(output_sentence_ids)
+        
     return decoded_words
 
-def run_evaluation(nmtModel:nn.Module, val_dataloader, input_lang, output_lang, input_tokenizer, tgt_tokenizer, print_sentences=False):
-    #TODO huggingface has gleu and bleu, remove hfeval ¿and nltk.translate?
-    #import hfeval
-    #from nltk.translate import gleu_score
+def run_test(nmtModel:nn.Module, test_dataloader, input_tokenizer, tgt_tokenizer, print_sentences=False):
     print("Evaluating model on test set:")
     predictions = []
-    predictions_tokenized = []
     references = []
-    references_tokenized = []
-    for pair in val_dataloader:
-        output_words = translate(nmtModel, pair[0], input_tokenizer, tgt_tokenizer)
-        references.append(pair[1])
-        references_tokenized.append(pair[1].split(" "))
-        output_sentence = ' '.join(output_words)
+    for input, target in test_dataloader:
+        #TODO iterate over batch
+        output_sentence = translate(nmtModel, input, target, tgt_tokenizer)
+        #TODO output_words works, accumulate, 
+        references.append(input)
         predictions.append(output_sentence)
-        predictions_tokenized.append(output_words)
         if print_sentences:
-          print('>', pair[0])
-          print('=', pair[1])
+          print('>', input)
+          print('=', target)
           print(f"<{output_sentence}\n")
 
-    #bleu = hfeval.load("bleu")
-    #bleu = hfeval.load("bleu", smoothing=True) # same as sacrebleu with default params
-    #sacrebleu = hfeval.load("sacrebleu") # default smooth_method="exp"
-
-    #bleu_score = bleu.compute(predictions=predictions, references=references)
-    #sacrebleu_score = sacrebleu.compute(predictions=predictions, references=references)
-    #gleu_number = gleu_score.corpus_gleu(list_of_references = references_tokenized, hypotheses= predictions_tokenized, min_len=1, max_len=4)
-
+    bleu = hfeval.load("bleu")
+    bleu_score = bleu.compute(predictions=predictions, references=references)
     print("Metric scores:")
-    #print(f"Corpus BLEU Score on test set: {bleu_score}")
-    #print(f"Corpus SacreBLEU Score on test set: {sacrebleu_score}")
-    #print(f"Corpus GLEU Score on test set: {gleu_number}")
+    print(f"Corpus BLEU Score on test set: {bleu_score}")
 
 
