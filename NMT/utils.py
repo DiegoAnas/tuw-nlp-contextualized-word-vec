@@ -73,8 +73,8 @@ def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device, print_
     dataset_size = len(dataloader)
     for batch_num, data in enumerate(dataloader):
         input_tensor, target_tensor = data
-        input_tensor = input_tensor.to(device)
-        target_tensor = target_tensor.to(device)
+        #input_tensor = input_tensor.to(device)
+        #target_tensor = target_tensor.to(device)
         model_optimizer.zero_grad()
         output = modelNMT(input_tensor, target_tensor)
         loss = criterion(output.view(-1, output.shape[-1]), target_tensor.view(-1))
@@ -91,9 +91,42 @@ def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device, print_
 
     return total_loss / len(dataloader)
 
-def train(train_dataloader, modelNMT, n_epochs,
-                learning_rate=0.001,
-                print_every=100, plot_every=100,
+def evaluate(dataloader, model, criterion, device, print_every:int|None=100)-> float:
+    """_summary_
+
+    Args:
+        dataloader (_type_): validation / test dataloader
+        model (_type_): _description_
+        criterion (_type_): _description_
+        device (_type_): _description_
+        print_every (int | None, optional): _description_. Defaults to 100.
+
+    Returns:
+        float: average loss
+    """
+    total_loss = 0
+    start = time.time()
+    dataset_size = len(dataloader)
+    for batch_num, data in enumerate(dataloader):
+        input_tensor, target_tensor = data
+        #input_tensor = input_tensor.to(device)
+        #target_tensor = target_tensor.to(device)
+        output = model(input_tensor, target_tensor)
+        loss = criterion(output.view(-1, output.shape[-1]), target_tensor.view(-1))    
+        total_loss += loss.item()
+        #TODO count correct tokens (?)
+        if print_every is not None:
+            if batch_num % print_every == 0:
+                print_loss_avg = total_loss / (batch_num+1)
+                print(f"Time {timeSince(start, (batch_num+1) / dataset_size)}, on batch {(batch_num+1)},\
+                progress: {(batch_num+1) / dataset_size * 100}%, accumulated loss: {total_loss}, avg loss{print_loss_avg}, last loss: {loss.item()}")
+
+    return total_loss / len(dataloader)
+
+def train(train_dataloader, modelNMT, n_epochs:int,
+                valid_dataloader,
+                learning_rate:float=0.001,
+                print_every:int=100, plot_every:int=100,
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
     
     start = time.time()
@@ -121,6 +154,13 @@ def train(train_dataloader, modelNMT, n_epochs,
             plot_loss_avg = plot_loss_total / plot_every
             plot_losses.append(plot_loss_avg)
             plot_loss_total = 0
+            
+         # evaluate on the validation set
+        average_loss = evaluate(valid_dataloader, modelNMT, criterion, device)
+        #valid_ppl = math.exp(min(valid_loss, 100))
+        print(f"Validation loss: {average_loss}")       
+        ### TODO save checkpoints
+        
     #TODO plot?
     #showPlot(plot_losses)
     
