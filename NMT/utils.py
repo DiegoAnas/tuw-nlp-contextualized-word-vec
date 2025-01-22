@@ -69,7 +69,7 @@ def timeSince(since, percent):
 ###############################
 #Training and evaluating methods
 
-def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device, print_every:int|None=100):
+def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device, print_every:int|None=None):
     total_loss = 0
     start = time.time()
     dataset_size = len(dataloader)
@@ -93,7 +93,7 @@ def train_epoch(dataloader, modelNMT, model_optimizer, criterion, device, print_
 
     return total_loss / len(dataloader)
 
-def evaluate(dataloader, model, criterion, device, print_every:int|None=100)-> float:
+def evaluate(dataloader, model, criterion, device, print_every:int|None=None)-> float:
     """_summary_
 
     Args:
@@ -128,7 +128,8 @@ def evaluate(dataloader, model, criterion, device, print_every:int|None=100)-> f
 def train(train_dataloader, modelNMT, n_epochs:int,
                 valid_dataloader,
                 learning_rate:float=0.001,
-                print_every:int=100, plot_every:int=100,
+                print_every_epoch:int=100, plot_every:int=100,
+                print_every_iter: int|None=None, 
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
     
     start = time.time()
@@ -142,12 +143,12 @@ def train(train_dataloader, modelNMT, n_epochs:int,
     # TODO look at NLLLoss ignore_index= param for adjusting the weight of token classes like <EOS> etc.
 
     for epoch in range(1, n_epochs + 1):
-        loss = train_epoch(train_dataloader, modelNMT, model_optimizer, criterion, device)
+        loss = train_epoch(train_dataloader, modelNMT, model_optimizer, criterion, device, print_every_iter)
         print_loss_total += loss
         plot_loss_total += loss
 
-        if epoch % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
+        if epoch % print_every_epoch == 0:
+            print_loss_avg = print_loss_total / print_every_epoch
             print_loss_total = 0
             print('%s (%d %d%%) %.4f' % (timeSince(start, epoch / n_epochs),
                                         epoch, epoch / n_epochs * 100, print_loss_avg))
@@ -172,6 +173,7 @@ def translate(nmtModel, input, target, target_tokenizer) -> str:
         #[batch, sentence_length, dict_size]
         output_sentence_ids = torch.topk(output_tensor,k=1)
         # target_tokenizer.decoder = decoders.WordPiece()
+        #TODO use .batch_decode ?¿ or iterate over batch
         decoded_words = target_tokenizer.decode(output_sentence_ids)
         
     return decoded_words
@@ -181,9 +183,10 @@ def run_test(nmtModel:nn.Module, test_dataloader, input_tokenizer, tgt_tokenizer
     predictions = []
     references = []
     for input, target in test_dataloader:
-        #TODO iterate over batch
+        #TODO iterate over batch or
+        #TODO return a list of translated sentences
+        # Bleu expects matching list of references (targets) and predictions (translations)
         output_sentence = translate(nmtModel, input, target, tgt_tokenizer)
-        #TODO output_words works, accumulate, 
         references.append(input)
         predictions.append(output_sentence)
         if print_sentences:
