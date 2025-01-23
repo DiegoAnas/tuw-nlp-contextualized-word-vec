@@ -15,6 +15,7 @@ class BCN(nn.Module):
 
     def __init__(self, config, n_vocab, vocabulary, embeddings, num_labels, embeddings_type):
         super(BCN, self).__init__()
+        #TODO remove config input or implement a config dict as input
         self.word_vec_size = config['word_vec_size']
         self.mtlstm_hidden_size = mtlstm_hidden_size[embeddings_type]  # config['mtlstm_hidden_size']
         self.cove_size = self.word_vec_size + self.mtlstm_hidden_size
@@ -87,6 +88,7 @@ class BCN(nn.Module):
     def forward(self, tokens_emb, length):
 
         reps = self.mtlstm(tokens_emb, length)  # size 1500
+        #TODO WRONG input of BCN should be the output of the encoder, not of the whole model
 
         glove = reps[:, :, :300]
         cove_1 = reps[:, :, 300:900]
@@ -179,6 +181,7 @@ class BCN(nn.Module):
         bn_max_out1 = self.bn2(max_out1_dropped)
         max_out2 = self.maxout2(bn_max_out1)
         max_out2_dropped = self.dropout(max_out2)
+        #TODO paper mentions 3 layers, add 1 more
 
         # rep = self.dropout(self.relu(self.fc1(pooled_representations_dropped)))
         # rep = self.dropout(self.relu(self.fc2(rep)))
