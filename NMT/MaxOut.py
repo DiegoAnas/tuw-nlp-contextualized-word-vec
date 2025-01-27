@@ -33,3 +33,14 @@ class Maxout(nn.Module):
 
         maxed_output = torch.max(affine_output.view(*shape), dim=-1)[0]
         return maxed_output
+        
+# Test Maxout functionality
+if __name__ == "__main__":
+    # Test Maxout
+    batch_size, input_dim, output_dim, pool_size = 32, 128, 64, 2
+    x = torch.randn(batch_size, input_dim)
+    maxout_layer = Maxout(input_dim, output_dim, pool_size)
+    output = maxout_layer(x)
+    print("Input shape:", x.shape)
+    print("Output shape:", output.shape)
+    assert output.shape == (batch_size, output_dim), "Maxout output shape mismatch!"

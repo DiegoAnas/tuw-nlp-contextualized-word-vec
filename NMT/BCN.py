@@ -16,18 +16,24 @@ class BCN(nn.Module):
     def __init__(self, config, n_vocab, vocabulary, embeddings, num_labels, embeddings_type):
         super(BCN, self).__init__()
         #TODO remove config input or implement a config dict as input
-        self.word_vec_size = config['word_vec_size']
-        self.mtlstm_hidden_size = mtlstm_hidden_size[embeddings_type]  # config['mtlstm_hidden_size']
+        # Validate `config` is a dictionary and provide defaults for missing keys
+        self.word_vec_size = config.get('word_vec_size', 300)
+        self.mtlstm_hidden_size = mtlstm_hidden_size[embeddings_type]
         self.cove_size = self.word_vec_size + self.mtlstm_hidden_size
-        self.fc_hidden_size = config['fc_hidden_size']
-        self.bilstm_encoder_size = config['bilstm_encoder_size']
-        self.bilstm_integrator_size = config['bilstm_integrator_size']
-        self.embeddings_type = embeddings_type
+
+        self.fc_hidden_size = config.get('fc_hidden_size', 128)
+        self.bilstm_encoder_size = config.get('bilstm_encoder_size', 256)
+        self.bilstm_integrator_size = config.get('bilstm_integrator_size', 256)
+        self.dropout = config.get('dropout', 0.1)
+        self.pool_size = config.get("maxout_channels", 4)
+        self.device = config.get('device', 'cpu')
+
 
         self.mtlstm = MTLSTM(n_vocab=n_vocab, vectors=vocabulary, residual_embeddings=True, model_cache=embeddings,
                              layer0=True, layer1=True)
 
-        self.fc = nn.Linear(self.cove_size, self.fc_hidden_size)
+        self.fc = nn.Linear(self.word_vec_size + mtlstm_hidden_size[embeddings_type], self.fc_hidden_size)
+
 
         self.bilstm_encoder = nn.LSTM(self.fc_hidden_size,
                                       self.bilstm_encoder_size // 2,
@@ -74,6 +80,7 @@ class BCN(nn.Module):
         for l in lens:
             mask.append([1] * l + [0] * (max_len - l))
         mask = torch.FloatTensor(mask)
+        
         if hidden_size == 1:
             trans_mask = mask
         else:
@@ -87,7 +94,9 @@ class BCN(nn.Module):
 
     def forward(self, tokens_emb, length):
 
-        reps = self.mtlstm(tokens_emb, length)  # size 1500
+        # Assuming `encoder` is a separate module
+        encoder_output = self.mtlstm(tokens_emb, length)  # Call the encoder
+        reps = tokens_emb
         #TODO WRONG input of BCN should be the output of the encoder, not of the whole model
 
         glove = reps[:, :, :300]
@@ -102,7 +111,7 @@ class BCN(nn.Module):
             reps = torch.cat([glove, cove_2], dim=2)
         elif self.embeddings_type == 'decove':
             s = torch.cat([cove_1.unsqueeze(-1), cove_2.unsqueeze(-1)], 3).detach()
-            softmax_weghts = torch.softmax(self.w, dim=0)
+            softmax_weights = torch.softmax(self.w, dim=0)
             weighted_reps = s.matmul(softmax_weghts).squeeze(-1) * self.gama
             reps = torch.cat([glove, weighted_reps], dim=2)  # size 300 + 600
 
@@ -116,6 +125,7 @@ class BCN(nn.Module):
         task_specific_reps = pack(task_specific_reps[indices], len_list, batch_first=True)
 
         outputs, _ = self.bilstm_encoder(task_specific_reps)
+        outputs = self.dropout(outputs) 
         X, _ = unpack(outputs, batch_first=True)
         _, _indices = torch.sort(indices, 0)
         X = X[_indices]
@@ -124,13 +134,14 @@ class BCN(nn.Module):
         attention_logits = X.bmm(X.permute(0, 2, 1))
 
         # turn small values into very negative ones (-Inf) so that they can be zeroed during softmax
-        attention_mask1 = torch.tensor((-1e32 * (attention_logits <= 1e-7).float()).detach(),
-                                       device=torch.device(self.device))
+        attention_mask1 = -1e32 * (attention_logits <= 1e-7).float().to(self.device)
         masked_attention_logits = attention_logits + attention_mask1  # mask logits that are near zero
         masked_Ax = self.sm(masked_attention_logits)  # prerform column-wise softmax
         masked_Ay = self.sm(masked_attention_logits.permute(0, 2, 1))
-        attention_mask2 = torch.tensor((attention_logits >= 1e-7).float().detach(),
-                                       device=torch.device(self.device))  # mask those all zeros
+        attention_mask2 = (attention_logits >= 1e-7).float().detach().to(self.device)
+
+
+ # mask those all zeros
         Ax = masked_Ax * attention_mask2
         Ay = masked_Ay * attention_mask2
 
@@ -138,11 +149,12 @@ class BCN(nn.Module):
         Cy = torch.bmm(Ay.permute(0, 2, 1), X)
 
         # Build the input to the integrator
-        integrator_input = torch.cat([X,
-                                      X - Cy,
-                                      X * Cy], 2)
+        integrator_input = torch.cat([X, X - Cy, X * Cy], 2)
+        integrator_input = self.dropout(integrator_input)
 
         integrator_input = pack(integrator_input[indices], len_list, batch_first=True)
+        integrator_input = self.dropout(integrator_input)
+
 
         outputs, _ = self.bilstm_integrator(integrator_input)  # batch_size * max_len * bilstm_integrator_size
         Xy, _ = unpack(outputs, batch_first=True)
@@ -187,4 +199,8 @@ class BCN(nn.Module):
         # rep = self.dropout(self.relu(self.fc2(rep)))
 
         logits = self.classifier(max_out2_dropped)
+        max_out3 = self.maxout3(max_out2_dropped)
+        max_out3_dropped = self.dropout(max_out3)
+        logits = self.classifier(max_out3_dropped)
+
         return logits
