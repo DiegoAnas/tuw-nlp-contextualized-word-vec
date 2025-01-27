@@ -96,7 +96,7 @@ class BCN(nn.Module):
 
         # Assuming `encoder` is a separate module
         encoder_output = self.mtlstm(tokens_emb, length)  # Call the encoder
-        reps = tokens_emb
+        reps = encoder_output
         #TODO WRONG input of BCN should be the output of the encoder, not of the whole model
 
         glove = reps[:, :, :300]
