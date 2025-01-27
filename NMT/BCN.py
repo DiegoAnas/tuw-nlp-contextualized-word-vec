@@ -90,9 +90,9 @@ class BCN(nn.Module):
         else:
             return trans_mask
 
-    def forward(self, encoder_output, length):
-
-        reps = encoder_output  # size 1500
+    def forward(self, tokens_emb, length):
+        encoder_output = self.mtlstm(tokens_emb, length)  # Call the encoder
+        reps = encoder_output
         #TODO WRONG input of BCN should be the output of the encoder, not of the whole model
 
         glove = reps[:, :, :300]
