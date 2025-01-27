@@ -194,5 +194,5 @@ class BCN(nn.Module):
         # rep = self.dropout(self.relu(self.fc1(pooled_representations_dropped)))
         # rep = self.dropout(self.relu(self.fc2(rep)))
 
-        logits = self.classifier(max_out2_dropped)
+        logits = self.classifier(max_out3_dropped)
         return logits
