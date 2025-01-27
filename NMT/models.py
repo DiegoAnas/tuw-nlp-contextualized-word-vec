@@ -11,16 +11,25 @@ from cove import CoVeEncoder
 #Econder
 
 class Encoder(nn.Module):
+<<<<<<< Updated upstream
     def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size: int, 
                  word_vec_dim: int, dict_size: int, vocab: dict, glove_embeddings: dict, 
                  padding=constants.PAD, freeze_embeddings=True, *args, **kwargs):
         super().__init__(*args, **kwargs)
+=======
+    # Dropout with ratio 0.2 was applied to the inputs and outputs of 
+    # all layers of the encoder and decoder.
+
+    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size: int, word_vec_dim: int, dict_size: int, glove_path=None, vocab=None, emb_layer=None, padding=constants.PAD):
+        super().__init__()
+>>>>>>> Stashed changes
         self.num_layers = num_layers
         self.bidirectional = bidirectional
         self.dropout_r = dropout
         self.dropout_l = nn.Dropout(p=dropout)
         self.dropout_l2 = nn.Dropout(p=dropout)
 
+<<<<<<< Updated upstream
         # Calculate hidden size for bidirectional case
         self.hidden_size = rnn_size // 2 if bidirectional else rnn_size
         self.word_vec_dim = word_vec_dim
@@ -38,10 +47,34 @@ class Encoder(nn.Module):
             hidden_size=self.hidden_size,
             num_layers=self.num_layers,
             dropout=self.dropout_r,
+=======
+        # Validate hidden size for bidirectional LSTMs
+        assert (bidirectional and (rnn_size % 2 == 0)) or (not bidirectional), \
+            "RNN size must be even for bidirectional LSTMs."
+
+        self.hidden_size = rnn_size // 2 if bidirectional else rnn_size
+        self.word_vec_dim = word_vec_dim
+
+        # GloVe Embedding Initialization or Predefined Embedding Layer
+        if emb_layer is None:
+            assert glove_path is not None and vocab is not None, "GloVe path and vocabulary must be provided."
+            glove_embeddings = self._load_glove_embeddings(glove_path, vocab, self.word_vec_dim)
+            self.embedding = nn.Embedding.from_pretrained(glove_embeddings, freeze=True, padding_idx=padding)
+        else:
+            self.embedding = emb_layer  # Use predefined embedding layer
+
+        # LSTM layer
+        self.LSTM = nn.LSTM(
+            input_size=self.word_vec_dim, 
+            hidden_size=self.hidden_size, 
+            num_layers=self.num_layers, 
+            dropout=self.dropout_r, 
+>>>>>>> Stashed changes
             bidirectional=self.bidirectional,
             batch_first=True
         )
 
+<<<<<<< Updated upstream
     def _create_embedding_matrix(self, vocab: dict, glove_embeddings: dict, embedding_dim: int) -> torch.Tensor:
         """
         Create an embedding matrix for the vocabulary using GloVe embeddings.
@@ -81,41 +114,79 @@ class Encoder(nn.Module):
 
         # Pass through the main LSTM
         outputs, hidden_t = self.LSTM(cove_outputs, hidden)
+=======
+    def _load_glove_embeddings(self, glove_path: str, vocab: dict, embedding_dim: int) -> torch.Tensor:
+        embeddings_index = {}
+        with open(glove_path, "r", encoding="utf-8") as f:
+            for line in f:
+                values = line.split()
+                word = values[0]
+                vector = torch.tensor([float(v) for v in values[1:]], dtype=torch.float32)
+                embeddings_index[word] = vector
+
+        vocab_size = len(vocab)
+        embedding_matrix = torch.zeros((vocab_size, embedding_dim))
+        for word, idx in vocab.items():
+            if word in embeddings_index:
+                embedding_matrix[idx] = embeddings_index[word]
+            else:
+                embedding_matrix[idx] = torch.rand(embedding_dim)  # Random for unknown words
+
+        return embedding_matrix
+
+    def forward(self, input: Tensor, hidden: Tuple[Tensor, Tensor] = None):
+        emb = self.embedding(input)  # [batch_size, seq_len, word_vec_dim]
+        emb = self.dropout_l(emb)
+
+        outputs, hidden_t = self.LSTM(emb, hidden)
+>>>>>>> Stashed changes
         outputs = self.dropout_l2(outputs)
 
         return outputs, hidden_t
 
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 ##################
 # Decoder
-    
+
 class Decoder(nn.Module):
-    #  Dropout with ratio 0.2 was applied to the inputs and outputs of 
+    # Dropout with ratio 0.2 was applied to the inputs and outputs of 
     # all layers of the encoder and decoder.
-    
-    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int, word_vec_dim:int, dict_size:int, padding=constants.PAD, *args, **kwargs):
+
+    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size: int, word_vec_dim: int, dict_size: int, padding=constants.PAD, *args, **kwargs):
         super().__init__(*args, **kwargs)
+<<<<<<< Updated upstream
         # TODO ? self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = kwargs.get('device', torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+=======
+>>>>>>> Stashed changes
         self.num_layers = num_layers
         self.bidirectional = bidirectional
         self.input_size = word_vec_dim
         self.hidden_size = rnn_size
-        self.embedding = nn.Embedding(num_embeddings = dict_size, # TODO what other size?
-                                embedding_dim = self.input_size,
-                                padding_idx = padding)
+        self.embedding = nn.Embedding(
+            num_embeddings=dict_size,
+            embedding_dim=self.input_size,
+            padding_idx=padding
+        )
         self.dropout_r = dropout
         self.dropout_l1 = nn.Dropout(p=dropout)
-        #self.decoder_lstm_input = embedding_size + hidden_size self.input_size + self.hidden_size
-        self.LSTM = nn.LSTM(input_size = self.input_size,
-                            hidden_size = self.hidden_size, 
-                            num_layers = self.num_layers, 
-                            dropout = self.dropout_r,
-                            bidirectional = self.bidirectional,
-                            batch_first=True)
+
+        # LSTM input size accounts for concatenated inputs
+        self.LSTM = nn.LSTM(
+            input_size=self.input_size + self.hidden_size,
+            hidden_size=self.hidden_size,
+            num_layers=self.num_layers,
+            dropout=self.dropout_r,
+            bidirectional=self.bidirectional,
+            batch_first=True
+        )
         self.dropout_l2 = nn.Dropout(p=dropout)
 
         self.linear_attn_in = nn.Linear(in_features=rnn_size, out_features=rnn_size)
+<<<<<<< Updated upstream
         self.linear_attn_out = nn.Linear(in_features=rnn_size*2, out_features=rnn_size)
         
         
@@ -198,14 +269,49 @@ class CoVeEncoder(nn.Module):
         return outputs
 
     
+=======
+        self.linear_attn_out = nn.Linear(in_features=rnn_size * 2, out_features=rnn_size)
+
+    def forward(self, tgt_tensor: Tensor, encoder_out_vec_H: Tensor, encoder_hidden_out: Tuple[Tensor, Tensor]) -> Tensor:
+        """
+        LSTM and global attention mechanism.
+        """
+        h_dec_tmin1 = encoder_hidden_out
+        batch_size = tgt_tensor.shape[0]
+        h_tilde_m1 = torch.zeros(batch_size, self.hidden_size, device=tgt_tensor.device)  # Compatible with device
+        tgt_word_embeddings = self.embedding(tgt_tensor)
+
+        context_adj_states = []
+        for emb_z_t in tgt_word_embeddings.split(1, dim=1):
+            emb_z_t = self.dropout_l1(emb_z_t)
+            input_lstm = torch.cat([emb_z_t, h_tilde_m1.unsqueeze(1)], dim=-1)  # Concatenate inputs
+            h_dec_t, hidden_cell = self.LSTM(input_lstm, h_dec_tmin1)
+            h_dec_t = self.dropout_l2(h_dec_t)
+
+            # Attention
+            attention_l_in = self.linear_attn_in(h_dec_t)
+            alpha_t = F.softmax(torch.bmm(attention_l_in, encoder_out_vec_H.permute(0, 2, 1)), dim=-1)
+            alpha_T_H = torch.bmm(alpha_t, encoder_out_vec_H)
+
+            # Combine
+            context_combined = torch.cat([h_dec_t.squeeze(1), alpha_T_H.squeeze(1)], dim=1)
+            context_adj_htilde = torch.tanh(self.linear_attn_out(context_combined))
+            h_tilde_m1 = context_adj_htilde
+            h_dec_tmin1 = hidden_cell
+            context_adj_states.append(context_adj_htilde)
+
+        h_context_stack = torch.stack(context_adj_states, dim=1)
+        return h_context_stack
+
+>>>>>>> Stashed changes
 class NMTModel(nn.Module):
-    
-    def __init__(self, encoder, decoder, rnn_size:int, tgt_dict_size:int, *args, **kwargs):
+    def __init__(self, encoder, decoder, rnn_size: int, tgt_dict_size: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.output_vocab_size = tgt_dict_size
         self.encoder = encoder
         self.decoder = decoder
         self.linear = nn.Linear(in_features=rnn_size, out_features=self.output_vocab_size)
+<<<<<<< Updated upstream
         #TODO add dropout module
     self.dropout = nn.Dropout(p=kwargs.get('dropout', 0.1))
         
@@ -214,14 +320,19 @@ class NMTModel(nn.Module):
         #  we need to convert it to layers x batch x (directions*dim)
         #TODO when not batched, this gives error
         if len(h[0].shape) == 2:  # When not batched
+=======
+        self.dropout = nn.Dropout(p=kwargs.get('dropout', 0.1))
+
+    def _fix_enc_hidden(self, h):
+        if len(h[0].shape) == 2:
+>>>>>>> Stashed changes
             h = (h[0].unsqueeze(1), h[1].unsqueeze(1))
         if self.encoder.bidirectional:
-            assert len(h) == 2 , f"enc_hidden tuple length 2 expected, got {len(h)}.\n{self.encoder}"
-            assert len(h[0].shape) == 3, f"expected [(layers*directions), batch, dim] enc_hidden, got {h[0].shape}.\n{self.encoder}"
-            return (h[0].view(h[0].shape[0]//2, h[0].shape[1], h[0].shape[2]*2),
-                    h[1].view(h[1].shape[0]//2, h[1].shape[1], h[1].shape[2]*2))
+            return (h[0].view(h[0].shape[0] // 2, h[0].shape[1], h[0].shape[2] * 2),
+                    h[1].view(h[1].shape[0] // 2, h[1].shape[1], h[1].shape[2] * 2))
         else:
             return h
+<<<<<<< Updated upstream
         
     def forward(self, input:Tuple):
         src = input[0]
@@ -235,6 +346,15 @@ class NMTModel(nn.Module):
         out = self.linear(decoder_out)
         #TODO add dropout op?
         
+=======
+
+    def forward(self, input: Tuple):
+        src, tgt = input
+        enc_out, enc_hidden = self.encoder(src)
+        enc_hidden = self._fix_enc_hidden(enc_hidden)
+        decoder_out = self.decoder(tgt, enc_out, enc_hidden)
+        decoder_out = self.dropout(decoder_out)
+        out = self.linear(decoder_out)
+>>>>>>> Stashed changes
         out = F.log_softmax(out, dim=-1)
-        
         return out
