@@ -16,12 +16,17 @@ class BCN(nn.Module):
     def __init__(self, config, n_vocab, vocabulary, embeddings, num_labels, embeddings_type):
         super(BCN, self).__init__()
         #TODO remove config input or implement a config dict as input
-        self.word_vec_size = config['word_vec_size']
-        self.mtlstm_hidden_size = mtlstm_hidden_size[embeddings_type]  # config['mtlstm_hidden_size']
+        assert isinstance(config, dict), "config must be a dictionary"
+        self.word_vec_size = config.get('word_vec_size', 300)
+        self.mtlstm_hidden_size = mtlstm_hidden_size[embeddings_type]
         self.cove_size = self.word_vec_size + self.mtlstm_hidden_size
-        self.fc_hidden_size = config['fc_hidden_size']
-        self.bilstm_encoder_size = config['bilstm_encoder_size']
-        self.bilstm_integrator_size = config['bilstm_integrator_size']
+
+        self.fc_hidden_size = config.get('fc_hidden_size', 128)
+        self.bilstm_encoder_size = config.get('bilstm_encoder_size', 256)
+        self.bilstm_integrator_size = config.get('bilstm_integrator_size', 256)
+        self.dropout = config.get('dropout', 0.1)
+        self.pool_size = config.get("maxout_channels", 4)
+        self.device = config.get('device', 'cpu')
         self.embeddings_type = embeddings_type
 
         self.mtlstm = MTLSTM(n_vocab=n_vocab, vectors=vocabulary, residual_embeddings=True, model_cache=embeddings,
@@ -85,9 +90,9 @@ class BCN(nn.Module):
         else:
             return trans_mask
 
-    def forward(self, tokens_emb, length):
+    def forward(self, encoder_output, length):
 
-        reps = self.mtlstm(tokens_emb, length)  # size 1500
+        reps = encoder_output  # size 1500
         #TODO WRONG input of BCN should be the output of the encoder, not of the whole model
 
         glove = reps[:, :, :300]
@@ -181,6 +186,9 @@ class BCN(nn.Module):
         bn_max_out1 = self.bn2(max_out1_dropped)
         max_out2 = self.maxout2(bn_max_out1)
         max_out2_dropped = self.dropout(max_out2)
+        bn_max_out2 = self.bn3(max_out2_dropped)
+        max_out3 = self.maxout3(bn_max_out2)
+        max_out3_dropped = self.dropout(max_out3)
         #TODO paper mentions 3 layers, add 1 more
 
         # rep = self.dropout(self.relu(self.fc1(pooled_representations_dropped)))
