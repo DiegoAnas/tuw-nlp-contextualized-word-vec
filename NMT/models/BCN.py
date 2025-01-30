@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from NMT.maxout import Maxout
-from NMT.models import NMTModel
+from NMT.modules.maxout import Maxout
+from NMT.models.NMTLSTM import NMTModel
 from NMT import constants 
 
 class BCN(nn.Module):

@@ -1,3 +1,3 @@
-import NMT.constants
-import NMT.models
-import NMT.modules
+from NMT.utils import *
+from NMT.models import *
+from NMT.modules import *

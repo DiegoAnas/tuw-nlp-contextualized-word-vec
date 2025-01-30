@@ -8,9 +8,9 @@ from torch.nn.utils.rnn import pad_sequence
 import os
 
 import NMT
-from NMT.models import Encoder, Decoder, NMTModel
-from NMT.Data_prep_WMT16 import preprocess
-import NMT.constants as constants
+from NMT.models.NMTLSTM import Encoder, Decoder, NMTModel
+from NMT.utils.Data_prep_WMT16 import preprocess
+import NMT.utils.constants as constants
 
 # Paths
 GLOVE_PATH = "./data/glove.6B.300d.txt"
