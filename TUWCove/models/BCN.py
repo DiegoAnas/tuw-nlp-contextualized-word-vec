@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from NMT.modules.maxout import Maxout
-from NMT.models.NMTLSTM import NMTModel
-from NMT import constants 
+from TUWCove.modules.maxout import Maxout
+from TUWCove.models.NMTLSTM import NMTModel
+from TUWCove.utils import constants 
 
 class BCN(nn.Module):
     """Implementation of Biattentive Classification Network in

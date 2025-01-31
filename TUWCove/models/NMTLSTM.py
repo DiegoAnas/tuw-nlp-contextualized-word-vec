@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import logging
 
-from NMT import constants
+from TUWCove.utils import constants
 ###################
 #Econder
 

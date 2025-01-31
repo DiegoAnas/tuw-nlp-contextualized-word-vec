@@ -7,10 +7,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.nn.utils.rnn import pad_sequence
 import os
 
-import NMT
-from NMT.models.NMTLSTM import Encoder, Decoder, NMTModel
-from NMT.utils.Data_prep_WMT16 import preprocess
-import NMT.utils.constants as constants
+import TUWCove
+from TUWCove.models.NMTLSTM import Encoder, Decoder, NMTModel
+from TUWCove.utils.Data_prep_WMT16 import preprocess
+import TUWCove.utils.constants as constants
 
 # Paths
 GLOVE_PATH = "./data/glove.6B.300d.txt"
