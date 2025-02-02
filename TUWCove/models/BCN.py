@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,9 +11,17 @@ class BCN(nn.Module):
     """Implementation of Biattentive Classification Network in
     Learned in Translation: Contextualized Word Vectors (NIPS 2017)
     for text classification"""
-
-    def __init__(self, config: dict, converter:nn.Module, num_labels:int, dict_length:int,
-                 embedding_type:str="random", *args, **kwargs):
+    
+    def __init__(self, config: dict, num_labels:int, dict_length:int,
+                 embedding_type:str="random",  converter:Optional[NMTModel]=None, *args, **kwargs):
+        """
+        Args:
+            config (dict): _description_
+            num_labels (int): _description_
+            dict_length (int): _description_
+            embedding_type (str, optional): _description_. Defaults to "random".
+            converter (Optional[NMTModel], optional): _description_. Defaults to None.        
+        """
         super().__init__(*args, **kwargs)
         assert isinstance(config, dict), "config must be a dictionary"
         self.word_vec_size = config.get('word_vec_size', 300)
@@ -24,31 +32,37 @@ class BCN(nn.Module):
         self.dropout = config.get('dropout', 0.1)
         self.pool_size = config.get("maxout_channels", 4)
         self.device = config.get('device', 'cpu')
+        
         self.embedding_type = embedding_type
+        self.glove, self.cove, self.random = False, False, False
         if embedding_type == "glove":
-            # Converter is matrix embedding
-            self.encoder = converter
+            # Converter is GloVe embedding layer
+            assert converter is not None
+            self.glove = True
+            self.glove_emb = converter.embeddings
             self.encoded_size = self.word_vec_size
         elif embedding_type == "cove":
-            # Converter is nmtModel
-            self.encoder = converter.encoder
+            # Converter is NMTModel
+            assert converter is not None
+            self.cove=True
+            self.glove_emb = converter.embeddings
+            self.converter = converter.encoder
             self.encoded_size = self.word_vec_size + self.mtlstm_hidden_size
         else:
-            # assuming random
+            # Default:  random
+            self.random=True
             self.encoded_size = self.mtlstm_hidden_size
             self.encoder = nn.Embedding(num_embeddings=dict_length,
                                         embedding_dim=self.encoded_size,
                                         padding_idx=constants.PAD)  
             
         self.fc = nn.Linear(self.encoded_size, self.fc_hidden_size)
-
         self.bilstm_encoder = nn.LSTM(self.fc_hidden_size,
                                       self.bilstm_encoder_size // 2,
                                       num_layers=1,
                                       batch_first=True,
                                       bidirectional=True,
                                       dropout=config['dropout'])
-
         self.bilstm_integrator = nn.LSTM(self.bilstm_encoder_size * 3,
                                          self.bilstm_integrator_size // 2,
                                          num_layers=1,
@@ -64,8 +78,7 @@ class BCN(nn.Module):
                                          bidirectional=True,
                                          dropout=config['dropout'])
         """
-        self.attentive_pooling_proj = nn.Linear(self.bilstm_integrator_size,
-                                                1)
+        self.attentive_pooling_proj = nn.Linear(self.bilstm_integrator_size, 1) ## TODO 1??
         self.pool_size = config["maxout_channels"]
         self.dropout_pool = nn.Dropout(config['dropout'])
         self.bn1 = nn.BatchNorm1d(self.bilstm_integrator_size * 4)
@@ -93,6 +106,7 @@ class BCN(nn.Module):
         Returns:
             torch.Tensor: Tensor same shape as input or [input, hidden_size]
         """
+        #TODO Get rid of this by passing a mask from the dataloader
         pad_mask = input.clone().detach()
         pad_mask = (~(pad_mask == pad_token_id)).to(torch.uint8)
         if hidden_size == 1:
@@ -117,22 +131,19 @@ class BCN(nn.Module):
           reshaped = True
 
         # MTLSTM vectors
-        if self.embedding_type == "cove":
+        if self.glove:
             with torch.no_grad():
-                glove = self.encoder.embedding(input_sentences)
-                dropped1 = self.encoder.dropout_l(glove)
-                cove, _ = self.encoder.LSTM(dropped1)
-                cove = self.encoder.dropout_l2(cove)
-                encoded = torch.cat([dropped1, cove], dim=-1)
-        elif self.embedding_type == "glove":
+                sequences = self.glove_emb(input)
+        if self.cove:
             with torch.no_grad():
-                encoded = self.encoder(input_sentences)
-        else:
-            encoded = self.encoder(input_sentences)
+                glove_vecs = self.glove_emb(input)
+                sequences = self.converter(glove_vecs)
+        if self.random:
+            sequences = self.converter(input)
             
 
         #Task specific f: ff + ReLU Network
-        task_specific_reps = F.relu(self.fc(encoded))
+        task_specific_reps = F.relu(self.fc(sequences))
         #Encoder (equation 7,8)
         encoded_tokens_XY, _ = self.bilstm_encoder(task_specific_reps) # [batch, x,input_encoder_size]
     

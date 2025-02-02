@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -11,8 +11,15 @@ from TUWCove.utils import constants
 
 class Encoder(nn.Module):
     def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size: int, 
-                 word_vec_dim: int, dict_size: int, vocab: dict, glove_embeddings, 
-                 padding=constants.PAD, freeze_embeddings=True, *args, **kwargs):
+                 word_vec_dim: int, *args, **kwargs):
+        """
+        Args:
+            num_layers (int): _description_
+            bidirectional (bool): _description_
+            dropout (float): _description_
+            rnn_size (int): _description_
+            word_vec_dim (int): _description_
+        """
         super().__init__(*args, **kwargs)
         self.num_layers = num_layers
         self.bidirectional = bidirectional
@@ -22,12 +29,6 @@ class Encoder(nn.Module):
         # Calculate hidden size for bidirectional case
         self.hidden_size = rnn_size // 2 if bidirectional else rnn_size
         self.LSTM_input_size = word_vec_dim
-
-        # Initialize the embedding layer with GloVe embeddings
-        if type(glove_embeddings) is type({}):
-            glove_embeddings = self._create_embedding_matrix(vocab, glove_embeddings, word_vec_dim)
-        self.embedding = nn.Embedding.from_pretrained(glove_embeddings, freeze=freeze_embeddings, padding_idx=padding)
-
         self.LSTM = nn.LSTM(
             input_size=self.LSTM_input_size, 
             hidden_size=self.hidden_size,
@@ -36,25 +37,6 @@ class Encoder(nn.Module):
             bidirectional=self.bidirectional,
             batch_first=True
         )
-
-    def _create_embedding_matrix(self, vocab: dict, glove_embeddings: dict, embedding_dim: int) -> torch.Tensor:
-        """
-        Create an embedding matrix for the vocabulary using GloVe embeddings.
-        Args:
-            vocab (dict): Vocabulary mapping (word -> index).
-            glove_embeddings (dict): Preloaded GloVe embeddings.
-            embedding_dim (int): Dimension of GloVe embeddings (e.g., 300).
-        Returns:
-            torch.Tensor: An embedding matrix of shape (vocab_size, embedding_dim).
-        """
-        vocab_size = len(vocab)
-        embedding_matrix = torch.zeros((vocab_size, embedding_dim))
-        for word, idx in vocab.items():
-            if word in glove_embeddings:
-                embedding_matrix[idx-1] = glove_embeddings[word]
-            else:
-                embedding_matrix[idx-1] = torch.rand(embedding_dim)  # Random for unknown words
-        return embedding_matrix
 
     def forward(self, input: torch.Tensor, hidden: Tuple[torch.Tensor, torch.Tensor]|None = None):
         """
@@ -80,7 +62,18 @@ class Encoder(nn.Module):
     
 class Decoder(nn.Module):
     
-    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int, word_vec_dim:int, dict_size:int, padding=constants.PAD, *args, **kwargs):
+    def __init__(self, num_layers: int, bidirectional: bool, dropout: float, rnn_size:int,
+                 word_vec_dim:int, dict_size:int, padding=constants.PAD, *args, **kwargs):
+        """_summary_
+        Args:
+            num_layers (int): _description_
+            bidirectional (bool): _description_
+            dropout (float): _description_
+            rnn_size (int): _description_
+            word_vec_dim (int): _description_
+            dict_size (int): _description_
+            padding (_type_, optional): _description_. Defaults to constants.PAD.
+        """
         super().__init__(*args, **kwargs)
         self.device = kwargs.get('device', torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         self.num_layers = num_layers
@@ -100,7 +93,6 @@ class Decoder(nn.Module):
                             bidirectional = self.bidirectional,
                             batch_first=True)
         self.dropout_l2 = nn.Dropout(p=dropout)
-
         self.linear_attn_in = nn.Linear(in_features=rnn_size, out_features=rnn_size)
         self.linear_attn_out = nn.Linear(in_features=rnn_size*2, out_features=rnn_size)
         self.dropout_l3 = nn.Dropout(p=dropout)
@@ -108,6 +100,15 @@ class Decoder(nn.Module):
     
     def forward(self, tgt_tensor: Tensor, encoder_out_vec_H: Tensor,
                 encoder_hidden_out: Tuple[Tensor, Tensor]) -> Tensor:
+        """_summary_
+        Args:
+            tgt_tensor (Tensor): _description_
+            encoder_out_vec_H (Tensor): _description_
+            encoder_hidden_out (Tuple[Tensor, Tensor]): _description_
+
+        Returns:
+            Tensor: _description_
+        """
         # Initialize decoder states
         h_dec_tmin1 = encoder_hidden_out
         batch_size = tgt_tensor.shape[0]
@@ -154,13 +155,99 @@ class Decoder(nn.Module):
     
 class NMTModel(nn.Module):
     
-    def __init__(self, encoder, decoder, rnn_size:int, tgt_dict_size:int, dropout: float=0.1, *args, **kwargs):
+    def __init__(self, encoder, decoder, rnn_size:int, tgt_dict_size:int, src_dict_size:int, word_vec_dim=300, use_glove: bool=False, glove_embeddings:Optional[Tensor]=None, padding=constants.PAD, dropout: float=0.1, *args, **kwargs):
+        """
+        Args:
+            encoder (_type_): _description_
+            decoder (_type_): _description_
+            rnn_size (int): _description_
+            tgt_dict_size (int): _description_
+            src_dict_size (int): _description_
+            word_vec_dim (int, optional): _description_. Defaults to 300.
+            use_glove (bool, optional): _description_. Defaults to False.
+            glove_embeddings (Optional[Tensor], optional): _description_. Defaults to None.
+            padding (_type_, optional): _description_. Defaults to constants.PAD.
+            dropout (float, optional): _description_. Defaults to 0.1.
+        """
         super().__init__(*args, **kwargs)
+        if use_glove:
+            assert glove_embeddings is not None
+            self.embedding  = nn.Embedding.from_pretrained(glove_embeddings, freeze=True, padding_idx=padding)
+        else:
+            self.embedding = nn.Embedding(src_dict_size, embedding_dim=word_vec_dim, padding_idx=padding)
         self.output_vocab_size = tgt_dict_size
         self.encoder = encoder
         self.decoder = decoder
         self.linear = nn.Linear(in_features=rnn_size, out_features=self.output_vocab_size)
         self.dropout = nn.Dropout(dropout)
+        
+    @classmethod
+    def NMT_Glove(cls, src_dict_len:int, tgt_dict_len:int, glove_embeddings:Tensor, word_vec_dim:int=300, rnn_size:int=300, dropout:float=0.1, padding=constants.PAD):
+        """Initialize the NMT model with precomputed embeddings."""
+
+        encoder = Encoder(
+            num_layers=2,
+            bidirectional=True,
+            dropout=dropout,
+            rnn_size=rnn_size,
+            word_vec_dim=word_vec_dim
+        )
+        decoder = Decoder(
+            num_layers=2,
+            bidirectional=False,
+            dropout=dropout,
+            rnn_size=rnn_size,
+            word_vec_dim=word_vec_dim, 
+            dict_size=tgt_dict_len,
+            padding=padding
+        )
+        assert glove_embeddings.size(1) == word_vec_dim, f"Glove Vector length does not match dimension: {glove_embeddings.size(1)}, {word_vec_dim}"
+        model = cls(
+            encoder=encoder,
+            decoder=decoder,
+            rnn_size=rnn_size,
+            src_dict_size= glove_embeddings.size(0),
+            tgt_dict_size=tgt_dict_len,
+            dropout=dropout,
+            word_vec_dim=word_vec_dim,
+            use_glove=True,
+            glove_embeddings = glove_embeddings, #TODO load embedding_matrix
+            padding=padding
+        )
+        return model
+    
+    @classmethod
+    def NMT_rand_embs(cls, src_dict_len:int, tgt_dict_len:int, word_vec_dim:int=300, rnn_size:int=300, dropout:float=0.1, padding=constants.PAD):
+        """Initialize the NMT model with precomputed embeddings."""
+
+        encoder = Encoder(
+            num_layers=2,
+            bidirectional=True,
+            dropout=dropout,
+            rnn_size=rnn_size,
+            word_vec_dim=word_vec_dim
+        )
+        decoder = Decoder(
+            num_layers=2,
+            bidirectional=False,
+            dropout=dropout,
+            rnn_size=rnn_size,
+            word_vec_dim=word_vec_dim, 
+            dict_size=tgt_dict_len,
+            padding=padding
+        )
+        model = cls(
+            encoder=encoder,
+            decoder=decoder,
+            rnn_size=rnn_size,
+            src_dict_size= src_dict_len,
+            tgt_dict_size=tgt_dict_len,
+            dropout=dropout,
+            word_vec_dim=word_vec_dim,
+            use_glove=False,
+            padding=padding
+        )
+        return model
         
     def _fix_enc_hidden(self, h):
         #  the encoder hidden is  (layers*directions) x batch x dim
@@ -177,8 +264,10 @@ class NMTModel(nn.Module):
         
     def forward(self, input:Tuple):
         src = input[0]
-        tgt = input[1] 
-        enc_out, enc_hidden = self.encoder(src)
+        tgt = input[1]
+        
+        embs = self.embedding(src)
+        enc_out, enc_hidden = self.encoder(embs)
         
         enc_hidden = self._fix_enc_hidden(enc_hidden)
     
