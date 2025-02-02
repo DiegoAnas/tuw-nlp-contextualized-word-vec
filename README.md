@@ -12,7 +12,7 @@ Encoder-Decoder Architecture using Global Attention module for the decoder.
 To evaluate the performance of this transfer learning method they utilize two architectures:
 
 #### Biattention Classification Network
-This model uses Biattention mechanism to classification tasks from IMDB, SST, TREC and SNLI datasets.
+This model uses Biattention mechanism to classification tasks from IMDB and SST datasets.
 
 #### Extensions
 This work is an extension of the paper _Learned in Translation: Contextualized Word Vectors_ with improvements using **BERT-based embeddings**.
