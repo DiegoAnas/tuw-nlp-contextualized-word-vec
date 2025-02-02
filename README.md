@@ -22,7 +22,6 @@ This work is an extension of the paper _Learned in Translation: Contextualized W
 
 ## **Next Steps**
 - Debug and stabilize BERT-based embeddings in BCN.
-- Experiment with different BERT variants (`bert-large`, `roberta-base`).
 - Fine-tune BERT layers for **domain-specific tasks**.
 
 
