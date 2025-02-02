@@ -16,6 +16,7 @@ This model uses Biattention mechanism to classification tasks from IMDB, SST, TR
 
 #### Extensions
 This work is an extension of the paper _Learned in Translation: Contextualized Word Vectors_ with improvements using **BERT-based embeddings**.
+
 ⚠ **Note:** The BERT-based embedding integration is still a **work in progress** and may not be fully functional yet. Further debugging and testing are required to ensure stability.
 
 
